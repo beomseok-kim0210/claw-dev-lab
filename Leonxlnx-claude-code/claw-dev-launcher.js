@@ -53,10 +53,12 @@ async function main() {
       if (!infoOnly) {
         await configureAnthropic(env, rl);
       }
+      syncBundledClientModel(provider, env, modelArg);
       return launchBundledClient(env, forwardArgs);
     }
 
     await configureCompatProvider(provider, env, rl, modelArg);
+    syncBundledClientModel(provider, env, modelArg);
     await ensureCompatProxy(provider, env);
     env.ANTHROPIC_BASE_URL = `http://127.0.0.1:${env.ANTHROPIC_COMPAT_PORT}`;
     env.ANTHROPIC_AUTH_TOKEN = "claw-dev-proxy";
@@ -319,6 +321,21 @@ async function configureCompatProvider(provider, env, rl, modelArg) {
     }
     default:
       throw new Error(`Unsupported provider: ${provider}`);
+  }
+}
+
+function syncBundledClientModel(provider, env, modelArg) {
+  if (provider === "anthropic") {
+    const anthropicModel = modelArg?.trim() || env.ANTHROPIC_MODEL?.trim();
+    if (anthropicModel) {
+      env.ANTHROPIC_MODEL = anthropicModel;
+    }
+    return;
+  }
+
+  const selectedModel = modelForProvider(provider, env)?.trim();
+  if (selectedModel) {
+    env.ANTHROPIC_MODEL = selectedModel;
   }
 }
 
