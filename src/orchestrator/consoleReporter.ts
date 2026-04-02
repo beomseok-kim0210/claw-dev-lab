@@ -2,15 +2,15 @@ import type { ChatMessage } from "../types/chat.js";
 import type { OrchestrationResult } from "../types/orchestration.js";
 
 export function printExecutionReport(result: OrchestrationResult): void {
-  process.stdout.write("=== Multi-Agent Discussion ===\n");
+  process.stdout.write("=== 멀티 에이전트 토론 ===\n");
   for (const message of result.transcript) {
     printChatMessage(message);
   }
 
-  process.stdout.write("\n=== PM Final Decision ===\n");
+  process.stdout.write("\n=== PM 최종 결정 ===\n");
   process.stdout.write(`${result.discussion.pmFinal.finalDecision}\n`);
 
-  process.stdout.write("\n=== Generated Files ===\n");
+  process.stdout.write("\n=== 생성된 파일 ===\n");
   for (const artifact of result.artifacts) {
     process.stdout.write(`- ${artifact.filename}: ${artifact.absolutePath}\n`);
   }

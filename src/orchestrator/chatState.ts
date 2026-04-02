@@ -6,7 +6,7 @@ export class ChatStateManager {
 
   addUserRequest(content: string): ChatMessage {
     return this.addMessage({
-      speaker: "User",
+      speaker: "사용자",
       role: "user",
       content,
     });

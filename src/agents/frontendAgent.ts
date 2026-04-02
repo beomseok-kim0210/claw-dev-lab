@@ -36,14 +36,14 @@ export async function generateFrontendSpec(args: {
 
 export function formatFrontendDiscussion(discussion: FrontendDiscussion): string {
   return [
-    `Headline: ${discussion.headline}`,
-    `Summary: ${discussion.summary}`,
-    "Screens:",
+    `제목: ${discussion.headline}`,
+    `요약: ${discussion.summary}`,
+    "화면 구성:",
     ...discussion.screens.map((item) => `- ${item}`),
-    "Components:",
+    "컴포넌트 구성:",
     ...discussion.components.map((item) => `- ${item}`),
-    "Usability Notes:",
+    "사용성 메모:",
     ...discussion.usabilityNotes.map((item) => `- ${item}`),
-    `References: ${discussion.references.join(", ")}`,
+    `참조 메시지: ${discussion.references.join(", ")}`,
   ].join("\n");
 }

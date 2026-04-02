@@ -30,6 +30,31 @@ export type GeneratedSpecs = {
   ai: AIFeaturesSpec;
 };
 
+export type OrchestrationPhaseKey =
+  | "user"
+  | "pm-initial"
+  | "backend"
+  | "frontend"
+  | "ai"
+  | "pm-final"
+  | "execution";
+
+export type OrchestrationPhaseState = "pending" | "active" | "completed" | "failed";
+
+export type OrchestrationPhaseUpdate = {
+  key: OrchestrationPhaseKey;
+  label: string;
+  state: OrchestrationPhaseState;
+  detail: string;
+  timestamp: string;
+};
+
+export type OrchestrationHooks = {
+  onMessage?: (message: ChatMessage) => void | Promise<void>;
+  onPhase?: (phase: OrchestrationPhaseUpdate) => void | Promise<void>;
+  onArtifacts?: (artifacts: GeneratedArtifact[]) => void | Promise<void>;
+};
+
 export type OrchestrationResult = {
   userRequest: string;
   transcript: ChatMessage[];

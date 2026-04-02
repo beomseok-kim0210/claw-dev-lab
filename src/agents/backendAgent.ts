@@ -36,14 +36,14 @@ export async function generateBackendSpec(args: {
 
 export function formatBackendDiscussion(discussion: BackendDiscussion): string {
   return [
-    `Headline: ${discussion.headline}`,
-    `Summary: ${discussion.summary}`,
-    "API Design:",
+    `제목: ${discussion.headline}`,
+    `요약: ${discussion.summary}`,
+    "API 설계:",
     ...discussion.apiDesign.map((item) => `- ${item}`),
-    "Data Model:",
+    "데이터 모델:",
     ...discussion.dataModel.map((item) => `- ${item}`),
-    "Constraints:",
+    "제약 사항:",
     ...discussion.constraints.map((item) => `- ${item}`),
-    `References: ${discussion.references.join(", ")}`,
+    `참조 메시지: ${discussion.references.join(", ")}`,
   ].join("\n");
 }

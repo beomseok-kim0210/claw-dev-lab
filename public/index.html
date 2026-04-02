@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Claw Dev 멀티 에이전트 룸</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <div class="background-orb background-orb-left"></div>
+  <div class="background-orb background-orb-right"></div>
+
+  <header class="topbar shell">
+    <div>
+      <p class="eyebrow">멀티 에이전트 협업 시스템</p>
+      <h1>에이전트와 함께 기획하고, 합의가 끝나면 구현 산출물까지 이어집니다.</h1>
+    </div>
+    <div class="server-meta">
+      <div class="status-chip" id="healthChip">Ollama 확인 중...</div>
+      <div class="model-chip" id="modelChip">qwen3</div>
+    </div>
+  </header>
+
+  <main class="shell layout">
+    <section class="panel composer-panel">
+      <div class="panel-head">
+        <p class="eyebrow">요청 입력</p>
+        <h2>공유 기획 방 시작하기</h2>
+      </div>
+
+      <label class="field-label" for="requestInput">팀이 함께 논의하고 설계할 요청을 입력하세요.</label>
+      <textarea id="requestInput" class="request-input" placeholder="PM, 백엔드, 프론트엔드, AI 에이전트가 함께 논의할 제품 또는 기능 요청을 자세히 적어주세요."></textarea>
+
+      <div class="composer-actions">
+        <button id="exampleButton" class="secondary-button" type="button">예시 불러오기</button>
+        <button id="submitButton" class="primary-button" type="button">세션 시작</button>
+      </div>
+
+      <div class="session-summary">
+        <div>
+          <p class="summary-label">세션</p>
+          <p class="summary-value" id="sessionIdValue">시작 전</p>
+        </div>
+        <div>
+          <p class="summary-label">상태</p>
+          <p class="summary-value" id="sessionStatusValue">대기 중</p>
+        </div>
+      </div>
+
+      <div class="phase-card">
+        <div class="panel-head compact">
+          <p class="eyebrow">턴 순서</p>
+          <h3>1라운드, 고정 순서</h3>
+        </div>
+        <ol class="phase-list" id="phaseList"></ol>
+      </div>
+
+      <div class="note-card">
+        <p class="note-title">현재 가능한 범위</p>
+        <p class="note-body">
+          에이전트와 함께 범위를 논의하고, 채팅방에서 합의 과정을 확인하고, 백엔드·프론트엔드·AI 구현 명세를 바로 내려받을 수 있습니다.
+        </p>
+      </div>
+    </section>
+
+    <section class="panel chat-panel">
+      <div class="panel-head">
+        <p class="eyebrow">공유 채팅방</p>
+        <h2>에이전트 토론 기록</h2>
+      </div>
+      <div class="chat-stream" id="chatStream">
+        <div class="empty-state">
+          <p class="empty-kicker">활성 세션 없음</p>
+          <h3>세션을 시작하면 고정된 턴 순서대로 메시지가 쌓입니다.</h3>
+          <p>PM이 먼저 시작하고, 백엔드·프론트엔드·AI 검토 후 PM이 최종 MVP 결정을 내립니다.</p>
+        </div>
+      </div>
+    </section>
+
+    <aside class="panel output-panel">
+      <div class="panel-head">
+        <p class="eyebrow">산출물</p>
+        <h2>실행 결과 문서</h2>
+      </div>
+
+      <div class="decision-card">
+        <p class="summary-label">PM 최종 방향</p>
+        <p id="decisionText" class="decision-text">토론이 끝나면 PM의 최종 결정이 여기에 표시됩니다.</p>
+      </div>
+
+      <div class="artifact-toolbar" id="artifactToolbar"></div>
+      <div class="artifact-preview" id="artifactPreview">
+        <div class="empty-state compact">
+          <h3>아직 생성된 파일이 없습니다</h3>
+          <p>실행 단계가 시작되면 생성된 마크다운 명세와 다운로드 링크가 여기에 표시됩니다.</p>
+        </div>
+      </div>
+    </aside>
+  </main>
+
+  <template id="messageTemplate">
+    <article class="message-card">
+      <div class="message-meta">
+        <span class="message-role"></span>
+        <span class="message-id"></span>
+      </div>
+      <h3 class="message-speaker"></h3>
+      <pre class="message-content"></pre>
+    </article>
+  </template>
+
+  <script type="module" src="/app.js"></script>
+</body>
+</html>

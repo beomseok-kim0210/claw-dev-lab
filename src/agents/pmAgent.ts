@@ -34,27 +34,27 @@ export async function runPmFinalDecision(args: {
 
 export function formatPmInitialDiscussion(discussion: PMInitialDiscussion): string {
   return [
-    `Headline: ${discussion.headline}`,
-    `Problem: ${discussion.problemStatement}`,
-    "MVP Goals:",
+    `제목: ${discussion.headline}`,
+    `문제 정의: ${discussion.problemStatement}`,
+    "MVP 목표:",
     ...discussion.mvpGoals.map((goal) => `- ${goal}`),
-    "Success Criteria:",
+    "성공 기준:",
     ...discussion.successCriteria.map((criterion) => `- ${criterion}`),
-    `References: ${discussion.references.join(", ")}`,
+    `참조 메시지: ${discussion.references.join(", ")}`,
   ].join("\n");
 }
 
 export function formatPmFinalDecision(decision: PMFinalDecision): string {
   return [
-    `Headline: ${decision.headline}`,
-    `Summary: ${decision.summary}`,
-    "Final MVP Scope:",
+    `제목: ${decision.headline}`,
+    `요약: ${decision.summary}`,
+    "최종 MVP 범위:",
     ...decision.mvpScope.map((item) => `- ${item}`),
-    "Non-Goals:",
+    "제외 범위:",
     ...decision.nonGoals.map((item) => `- ${item}`),
-    "Delivery Plan:",
+    "진행 계획:",
     ...decision.deliveryPlan.map((item) => `- ${item}`),
-    `Final Decision: ${decision.finalDecision}`,
-    `References: ${decision.references.join(", ")}`,
+    `최종 결정: ${decision.finalDecision}`,
+    `참조 메시지: ${decision.references.join(", ")}`,
   ].join("\n");
 }

@@ -36,14 +36,14 @@ export async function generateAIFeaturesSpec(args: {
 
 export function formatAIDiscussion(discussion: AIDiscussion): string {
   return [
-    `Headline: ${discussion.headline}`,
-    `Summary: ${discussion.summary}`,
-    "AI Features:",
+    `제목: ${discussion.headline}`,
+    `요약: ${discussion.summary}`,
+    "AI 기능:",
     ...discussion.aiFeatures.map((item) => `- ${item}`),
-    "Feasibility:",
+    "실현 가능성:",
     ...discussion.feasibility.map((item) => `- ${item}`),
-    "Risks:",
+    "위험 요소:",
     ...discussion.risks.map((item) => `- ${item}`),
-    `References: ${discussion.references.join(", ")}`,
+    `참조 메시지: ${discussion.references.join(", ")}`,
   ].join("\n");
 }

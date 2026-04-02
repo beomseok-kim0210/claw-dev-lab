@@ -18,20 +18,20 @@ type ParsedArgs = {
 };
 
 function printHelp(): void {
-  process.stdout.write("Multi-Agent Collaboration System\n\n");
-  process.stdout.write("Usage:\n");
-  process.stdout.write('  npm run dev -- "build an AI support dashboard"\n');
+  process.stdout.write("멀티 에이전트 협업 시스템\n\n");
+  process.stdout.write("사용법:\n");
+  process.stdout.write('  npm run dev -- "AI 고객지원 대시보드를 설계해줘"\n');
   process.stdout.write("  npm run dev -- --example\n");
   process.stdout.write(
-    '  npm run dev -- --cwd E:\\repo --output-dir .\\artifacts --model qwen3 "design a PRD workspace"\n\n',
+    '  npm run dev -- --cwd E:\\repo --output-dir .\\artifacts --model qwen3 "PRD 워크스페이스를 설계해줘"\n\n',
   );
-  process.stdout.write("Flags:\n");
-  process.stdout.write("  --help         Show this help text\n");
-  process.stdout.write("  --example      Run the built-in example request\n");
-  process.stdout.write("  --cwd          Set the working directory\n");
-  process.stdout.write("  --output-dir   Directory for backend-spec.md, frontend-spec.md, ai-features.md\n");
-  process.stdout.write("  --model        Override the Ollama model\n");
-  process.stdout.write("  --base-url     Override the Ollama base URL\n");
+  process.stdout.write("옵션:\n");
+  process.stdout.write("  --help         도움말 출력\n");
+  process.stdout.write("  --example      내장 예시 요청 실행\n");
+  process.stdout.write("  --cwd          작업 디렉터리 지정\n");
+  process.stdout.write("  --output-dir   backend-spec.md, frontend-spec.md, ai-features.md 저장 경로\n");
+  process.stdout.write("  --model        Ollama 모델 이름 덮어쓰기\n");
+  process.stdout.write("  --base-url     Ollama 기본 URL 덮어쓰기\n");
 }
 
 function parseArgs(argv: string[]): ParsedArgs {
@@ -131,8 +131,8 @@ async function main(): Promise<void> {
     outputDir: config.outputDir,
   });
 
-  process.stdout.write(`Using Ollama model ${config.ollamaModel} at ${config.ollamaBaseUrl}\n`);
-  process.stdout.write(`Output directory: ${config.outputDir}\n`);
+  process.stdout.write(`사용 모델: ${config.ollamaModel} (${config.ollamaBaseUrl})\n`);
+  process.stdout.write(`출력 디렉터리: ${config.outputDir}\n`);
 
   const result = await orchestrator.run(request);
   printExecutionReport(result);
@@ -140,6 +140,6 @@ async function main(): Promise<void> {
 
 main().catch((error) => {
   const message = error instanceof Error ? error.message : String(error);
-  process.stderr.write(`${pc.red(`Error: ${message}`)}\n`);
+  process.stderr.write(`${pc.red(`오류: ${message}`)}\n`);
   process.exitCode = 1;
 });
