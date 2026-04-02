@@ -5,6 +5,7 @@ import type {
   AIFeaturesSpec,
   BackendSpec,
   FrontendSpec,
+  InfraSpec,
   PMFinalDecision,
 } from "../types/contracts.js";
 
@@ -23,6 +24,7 @@ type CodeScaffolderArgs = {
   backendSpec: BackendSpec;
   frontendSpec: FrontendSpec;
   aiFeaturesSpec: AIFeaturesSpec;
+  infraSpec: InfraSpec;
 };
 
 export function buildCodeArtifacts(args: CodeScaffolderArgs): PendingCodeArtifact[] {
@@ -43,7 +45,7 @@ export function buildCodeArtifacts(args: CodeScaffolderArgs): PendingCodeArtifac
       {
         owner: "backend",
         filename: path.posix.join("generated-app", "src", "shared", "contracts.ts"),
-        content: renderContractsFile(meta.title, args.finalDecision, args.backendSpec, args.frontendSpec, args.aiFeaturesSpec),
+        content: renderContractsFile(meta.title, args.finalDecision, args.backendSpec, args.frontendSpec, args.aiFeaturesSpec, args.infraSpec),
       },
       {
         owner: "backend",
@@ -74,6 +76,31 @@ export function buildCodeArtifacts(args: CodeScaffolderArgs): PendingCodeArtifac
         owner: "frontend",
         filename: path.posix.join("generated-app", "public", "styles.css"),
         content: renderFrontendStyles(),
+      },
+    ];
+  }
+
+  if (args.owner === "infra") {
+    return [
+      {
+        owner: "infra",
+        filename: path.posix.join("generated-app", ".env.example"),
+        content: renderEnvExample(),
+      },
+      {
+        owner: "infra",
+        filename: path.posix.join("generated-app", "Dockerfile"),
+        content: renderDockerfile(),
+      },
+      {
+        owner: "infra",
+        filename: path.posix.join("generated-app", "docker-compose.yml"),
+        content: renderComposeYaml(),
+      },
+      {
+        owner: "infra",
+        filename: path.posix.join("generated-app", "ops", "README.md"),
+        content: renderOpsReadme(args.infraSpec),
       },
     ];
   }
@@ -146,6 +173,7 @@ function renderContractsFile(
   backendSpec: BackendSpec,
   frontendSpec: FrontendSpec,
   aiFeaturesSpec: AIFeaturesSpec,
+  infraSpec: InfraSpec,
 ): string {
   return [
     `export const PROJECT_TITLE = ${literal(title)};`,
@@ -154,6 +182,7 @@ function renderContractsFile(
     `export const API_NOTES = ${literalArray(backendSpec.apiDesign)};`,
     `export const UI_NOTES = ${literalArray(frontendSpec.components)};`,
     `export const AI_GUARDRAILS = ${literalArray(aiFeaturesSpec.guardrails)};`,
+    `export const INFRA_NOTES = ${literalArray(infraSpec.operationsChecklist)};`,
     "",
     "export type FeatureCandidate = {",
     "  id: string;",
@@ -342,7 +371,7 @@ function renderPrdEngine(title: string, finalDecision: PMFinalDecision, aiFeatur
     "",
     "  const seeded = tokens.length > 0 ? tokens : AI_FEATURES.slice(0, 3);",
     "  return seeded.map((item, index) => ({",
-    "    id: `feature-${String(index + 1).padStart(2, \"0\")}` ,",
+    "    id: `feature-${String(index + 1).padStart(2, \"0\")}`,",
     "    name: item,",
     "    reason: `요청 분석 결과와 AI 기능 제안 ${index + 1}을 반영한 항목입니다.`,",
     "  }));",
@@ -524,7 +553,6 @@ function renderFrontendStyles(): string {
     "  --muted: #5c6660;",
     "  --line: rgba(31, 36, 33, 0.12);",
     "  --accent: #ca5a1f;",
-    "  --accent-soft: rgba(202, 90, 31, 0.12);",
     "}",
     "",
     "* { box-sizing: border-box; }",
@@ -557,6 +585,51 @@ function renderFrontendStyles(): string {
     ".section li span { display: block; color: var(--muted); }",
     ".empty { border: 1px dashed var(--line); border-radius: 18px; padding: 1rem; color: var(--muted); }",
     "@media (max-width: 840px) { .grid { grid-template-columns: 1fr; } }",
+  ].join("\n");
+}
+
+function renderEnvExample(): string {
+  return [
+    "PORT=4040",
+    "NODE_ENV=development",
+  ].join("\n");
+}
+
+function renderDockerfile(): string {
+  return [
+    "FROM node:22-alpine",
+    "WORKDIR /app",
+    "COPY package.json tsconfig.json ./",
+    "COPY public ./public",
+    "COPY src ./src",
+    "RUN npm install",
+    "EXPOSE 4040",
+    "CMD [\"npm\", \"run\", \"dev\"]",
+  ].join("\n");
+}
+
+function renderComposeYaml(): string {
+  return [
+    "services:",
+    "  app:",
+    "    build: .",
+    "    env_file:",
+    "      - .env.example",
+    "    ports:",
+    "      - \"4040:4040\"",
+    "    restart: unless-stopped",
+  ].join("\n");
+}
+
+function renderOpsReadme(infraSpec: InfraSpec): string {
+  return [
+    "# 운영 메모",
+    "",
+    "## 운영 체크리스트",
+    ...infraSpec.operationsChecklist.map((item) => `- ${item}`),
+    "",
+    "## 구현 단계",
+    ...infraSpec.implementationSteps.map((item) => `- ${item}`),
   ].join("\n");
 }
 

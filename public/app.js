@@ -1,5 +1,5 @@
 const EXAMPLE_REQUEST =
-  "사용자가 PRD를 올리면 PM이 먼저 문제를 정의하고, 백엔드·프론트엔드·AI가 자유 토론으로 주장과 반박을 주고받은 뒤, 최종적으로 명세와 구현 실행 계획까지 만드는 워크스페이스를 설계해줘.";
+  "사용자가 PRD를 올리면 PM이 먼저 문제를 정의하고, 백엔드·프론트엔드·AI·인프라가 자유 토론과 반박을 이어간 뒤 필요한 정보는 사용자에게 다시 묻고 설계와 코드 생성까지 이어가는 협업 워크스페이스를 만들어줘.";
 
 const state = {
   sessionId: null,
@@ -16,6 +16,9 @@ const sessionStatusValue = document.getElementById("sessionStatusValue");
 const healthChip = document.getElementById("healthChip");
 const modelChip = document.getElementById("modelChip");
 const phaseList = document.getElementById("phaseList");
+const clarificationPanel = document.getElementById("clarificationPanel");
+const clarificationSummary = document.getElementById("clarificationSummary");
+const clarificationForm = document.getElementById("clarificationForm");
 const chatStream = document.getElementById("chatStream");
 const decisionText = document.getElementById("decisionText");
 const artifactToolbar = document.getElementById("artifactToolbar");
@@ -64,6 +67,7 @@ submitButton.addEventListener("click", async () => {
 
 async function boot() {
   renderPhases([]);
+  renderClarification(undefined, "queued");
   await loadHealth();
 }
 
@@ -71,11 +75,11 @@ async function loadHealth() {
   try {
     const response = await fetch("/api/health");
     const payload = await response.json();
-    healthChip.textContent = payload.ok ? "Ollama 연결됨" : "Ollama 연결 안 됨";
+    healthChip.textContent = payload.ok ? "Ollama 연결됨" : "Ollama 연결 실패";
     healthChip.classList.toggle("healthy", Boolean(payload.ok));
     modelChip.textContent = payload.model ?? "qwen3";
   } catch {
-    healthChip.textContent = "Ollama 연결 안 됨";
+    healthChip.textContent = "Ollama 연결 실패";
     healthChip.classList.remove("healthy");
   }
 }
@@ -118,6 +122,12 @@ function openSessionStream(sessionId) {
     applySnapshot(state.snapshot);
   });
 
+  eventSource.addEventListener("clarification", (event) => {
+    const payload = JSON.parse(event.data);
+    state.snapshot.clarification = payload.clarification;
+    applySnapshot(state.snapshot);
+  });
+
   eventSource.addEventListener("status", (event) => {
     const payload = JSON.parse(event.data);
     state.snapshot.status = payload.status;
@@ -125,6 +135,12 @@ function openSessionStream(sessionId) {
       state.snapshot.error = payload.error;
     }
     applySnapshot(state.snapshot);
+
+    if (payload.status === "waiting_input") {
+      setBusy(false);
+      return;
+    }
+
     if (payload.status === "completed" || payload.status === "failed") {
       setBusy(false);
       eventSource.close();
@@ -132,8 +148,11 @@ function openSessionStream(sessionId) {
   });
 
   eventSource.onerror = () => {
-    if (state.snapshot?.status !== "completed" && state.snapshot?.status !== "failed") {
-      sessionStatusValue.textContent = "연결이 끊어졌습니다. 새로고침 후 다시 연결하세요.";
+    if (!state.snapshot) {
+      return;
+    }
+    if (state.snapshot.status !== "completed" && state.snapshot.status !== "failed") {
+      sessionStatusValue.textContent = "연결이 끊어졌습니다. 새로고침 후 다시 접속하세요.";
     }
   };
 }
@@ -142,6 +161,7 @@ function applySnapshot(snapshot) {
   sessionIdValue.textContent = snapshot.id;
   sessionStatusValue.textContent = formatStatus(snapshot.status, snapshot.error);
   renderPhases(snapshot.phases);
+  renderClarification(snapshot.clarification, snapshot.status);
   renderTranscript(snapshot.transcript);
   renderDecision(snapshot.transcript, snapshot.error);
   renderArtifacts(snapshot.artifacts);
@@ -156,6 +176,9 @@ function formatStatus(status, error) {
   }
   if (status === "running") {
     return "실행 중";
+  }
+  if (status === "waiting_input") {
+    return "사용자 답변 대기";
   }
   if (status === "completed") {
     return "완료";
@@ -191,6 +214,101 @@ function renderPhases(phases) {
   }
 }
 
+function renderClarification(clarification, status) {
+  clarificationForm.innerHTML = "";
+  clarificationSummary.textContent = "";
+
+  if (!clarification) {
+    clarificationPanel.classList.add("hidden");
+    return;
+  }
+
+  clarificationPanel.classList.remove("hidden");
+  clarificationSummary.textContent = clarification.summary;
+
+  if (clarification.state === "answered") {
+    clarificationForm.innerHTML = clarification.questions
+      .map((question) => {
+        const matched = clarification.answers.find((answer) => answer.questionId === question.id);
+        return `
+          <div class="clarification-question">
+            <div class="clarification-meta">${roleLabel(question.askedBy)} · ${topicLabel(question.topic)} · ${question.id}</div>
+            <p class="clarification-text">${escapeHtml(question.question)}</p>
+            <p class="clarification-reason">${escapeHtml(question.reason)}</p>
+            <div class="clarification-answer">${escapeHtml(matched?.answer ?? "답변 없음")}</div>
+          </div>
+        `;
+      })
+      .join("");
+    return;
+  }
+
+  clarificationForm.innerHTML = clarification.questions
+    .map(
+      (question) => `
+        <label class="clarification-question" for="${question.id}">
+          <span class="clarification-meta">${roleLabel(question.askedBy)} · ${topicLabel(question.topic)} · ${question.id}</span>
+          <span class="clarification-text">${escapeHtml(question.question)}</span>
+          <span class="clarification-reason">${escapeHtml(question.reason)}</span>
+          <textarea class="clarification-input" id="${question.id}" data-question-id="${question.id}" placeholder="이 질문에 대한 답변을 입력하세요"></textarea>
+        </label>
+      `,
+    )
+    .join("");
+
+  const submit = document.createElement("button");
+  submit.type = "button";
+  submit.className = "primary-button clarification-submit";
+  submit.textContent = status === "waiting_input" ? "답변 제출" : "답변 제출 대기";
+  submit.disabled = status !== "waiting_input";
+  submit.addEventListener("click", () => {
+    void submitClarificationAnswers(clarification.questions);
+  });
+  clarificationForm.append(submit);
+}
+
+async function submitClarificationAnswers(questions) {
+  if (!state.sessionId) {
+    return;
+  }
+
+  const answers = questions.map((question) => {
+    const field = clarificationForm.querySelector(`[data-question-id="${question.id}"]`);
+    const value = field instanceof HTMLTextAreaElement ? field.value.trim() : "";
+    return {
+      questionId: question.id,
+      answer: value.length > 0 ? value : "추가 정보 없이 기본 가정으로 진행합니다.",
+    };
+  });
+
+  const submit = clarificationForm.querySelector(".clarification-submit");
+  if (submit instanceof HTMLButtonElement) {
+    submit.disabled = true;
+    submit.textContent = "답변 전송 중...";
+  }
+
+  try {
+    const response = await fetch(`/api/sessions/${state.sessionId}/clarifications`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ answers }),
+    });
+
+    if (!response.ok) {
+      const payload = await response.json().catch(() => ({ error: "답변 제출에 실패했습니다." }));
+      throw new Error(payload.error ?? "답변 제출에 실패했습니다.");
+    }
+  } catch (error) {
+    if (submit instanceof HTMLButtonElement) {
+      submit.disabled = false;
+      submit.textContent = "답변 제출";
+    }
+    sessionStatusValue.textContent = error instanceof Error ? error.message : String(error);
+  }
+}
+
 function renderTranscript(transcript) {
   chatStream.innerHTML = "";
 
@@ -198,8 +316,8 @@ function renderTranscript(transcript) {
     chatStream.innerHTML = `
       <div class="empty-state">
         <p class="empty-kicker">아직 대화가 없습니다</p>
-        <h3>세션이 시작되면 주장, 반박 대상, 보완 제안이 카드 형태로 표시됩니다.</h3>
-        <p>중간 토론은 고정 순서가 아니라 동적으로 진행되고, PM은 처음과 마지막에만 개입합니다.</p>
+        <h3>세션을 시작하면 주장, 반박, 보완, 구현 메시지가 순서대로 표시됩니다.</h3>
+        <p>중간 토론은 고정 순서가 아니라 동적으로 진행되고, 구현 중에도 같은 채팅방에 메시지가 이어집니다.</p>
       </div>
     `;
     return;
@@ -264,7 +382,7 @@ function renderMessageBody(content) {
       continue;
     }
 
-    if (matched[1] === "메시지 유형") {
+    if (matched[1] === "메시지 유형" || matched[1] === "반응 유형") {
       blocks.push(
         `<div class="message-line"><span class="line-label">${label}</span><span class="message-pill" data-kind="${reactionKind(value)}">${escapeHtml(value)}</span></div>`,
       );
@@ -281,10 +399,10 @@ function renderMessageBody(content) {
 }
 
 function reactionKind(value) {
-  if (value.includes("반박")) {
+  if (value.includes("반박") || value.includes("challenge")) {
     return "challenge";
   }
-  if (value.includes("지지")) {
+  if (value.includes("지지") || value.includes("support")) {
     return "support";
   }
   return "refine";
@@ -303,7 +421,29 @@ function roleLabel(role) {
   if (role === "ai") {
     return "AI";
   }
+  if (role === "infra") {
+    return "인프라";
+  }
   return "사용자";
+}
+
+function topicLabel(topic) {
+  if (topic === "scope") {
+    return "범위";
+  }
+  if (topic === "api") {
+    return "API";
+  }
+  if (topic === "data") {
+    return "데이터";
+  }
+  if (topic === "ui") {
+    return "UI";
+  }
+  if (topic === "ai") {
+    return "AI";
+  }
+  return "인프라";
 }
 
 function renderDecision(transcript, error) {
@@ -315,7 +455,7 @@ function renderDecision(transcript, error) {
   const pmMessages = transcript.filter((message) => message.role === "pm");
   const finalPm = pmMessages.at(-1);
   if (!finalPm) {
-    decisionText.textContent = "토론이 끝나면 PM의 최종 결정이 여기에 표시됩니다.";
+    decisionText.textContent = "토론이 끝나면 PM 최종 결정이 여기에 표시됩니다.";
     return;
   }
 
@@ -328,14 +468,20 @@ function renderDecision(transcript, error) {
     : finalPm.content;
 }
 
-function legacyRenderArtifacts(artifacts) {
+function renderArtifacts(artifacts) {
   artifactToolbar.innerHTML = "";
 
   if (!artifacts.length) {
+    const failureMessage =
+      state.snapshot?.status === "failed" && state.snapshot?.error
+        ? `<p class="artifact-error">${escapeHtml(state.snapshot.error)}</p>`
+        : "";
+
     artifactPreview.innerHTML = `
       <div class="empty-state compact">
         <h3>아직 생성된 파일이 없습니다</h3>
-        <p>명세 문서와 구현 실행 계획이 이 영역에 표시됩니다.</p>
+        <p>명세 문서, 구현 계획, 생성 코드가 이 영역에 표시됩니다.</p>
+        ${failureMessage}
       </div>
     `;
     return;
@@ -364,6 +510,18 @@ function legacyRenderArtifacts(artifacts) {
     </div>
     ${renderArtifactContent(activeArtifact)}
   `;
+}
+
+function renderArtifactContent(artifact) {
+  if (isMarkdownArtifact(artifact.filename)) {
+    return `<div class="markdown-body">${renderMarkdown(artifact.content)}</div>`;
+  }
+
+  return `<pre class="code-block"><code>${escapeHtml(artifact.content)}</code></pre>`;
+}
+
+function isMarkdownArtifact(filename) {
+  return filename.toLowerCase().endsWith(".md");
 }
 
 function renderMarkdown(markdown) {
@@ -429,7 +587,7 @@ function renderMarkdown(markdown) {
 }
 
 function escapeHtml(value) {
-  return value
+  return String(value)
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;");
@@ -441,94 +599,46 @@ function setBusy(isBusy) {
 }
 
 function resetSessionView() {
+  if (state.eventSource) {
+    state.eventSource.close();
+    state.eventSource = null;
+  }
+
   state.snapshot = null;
   state.activeArtifact = null;
   sessionIdValue.textContent = "시작 중...";
   sessionStatusValue.textContent = "대기 중";
   renderPhases(defaultPhases());
+  renderClarification(undefined, "queued");
   renderTranscript([]);
   renderArtifacts([]);
-  decisionText.textContent = "토론이 끝나면 PM의 최종 결정이 여기에 표시됩니다.";
+  decisionText.textContent = "토론이 끝나면 PM 최종 결정이 여기에 표시됩니다.";
 }
 
 function defaultPhases() {
   return [
-    { label: "사용자 요청", state: "pending", detail: "요청을 기다리고 있습니다." },
-    { label: "PM 문제 정의", state: "pending", detail: "PM 에이전트가 토론의 기준선을 먼저 정합니다." },
-    { label: "자유 토론", state: "pending", detail: "백엔드, 프론트엔드, AI가 주장과 반박을 주고받습니다." },
-    { label: "PM 최종 결정", state: "pending", detail: "PM 에이전트가 토론을 정리하고 결론을 냅니다." },
-    { label: "명세 산출물", state: "pending", detail: "역할별 구현 명세 문서가 생성됩니다." },
-    { label: "구현 실행 계획", state: "pending", detail: "실제 개발 작업 순서와 완료 기준이 정리됩니다." },
+    { key: "user", label: "사용자 요청", state: "pending", detail: "요청을 기다리고 있습니다." },
+    { key: "pm-initial", label: "PM 문제 정의", state: "pending", detail: "PM이 문제와 MVP를 정리합니다." },
+    { key: "discussion", label: "자유 토론", state: "pending", detail: "역할별 주장과 반박이 오갑니다." },
+    { key: "clarification", label: "추가 확인", state: "pending", detail: "필요하면 사용자에게 질문합니다." },
+    { key: "pm-final", label: "PM 최종 결정", state: "pending", detail: "PM이 방향과 범위를 확정합니다." },
+    { key: "execution", label: "명세 산출물", state: "pending", detail: "역할별 명세 문서를 생성합니다." },
+    { key: "implementation", label: "구현 실행 계획", state: "pending", detail: "구현 순서와 완료 기준을 정리합니다." },
+    { key: "coding", label: "코드 구현", state: "pending", detail: "실제 코드 생성과 상호 리뷰가 이어집니다." },
   ];
 }
 
-function detailForState(state) {
-  if (state === "active") {
+function detailForState(stateValue) {
+  if (stateValue === "active") {
     return "현재 진행 중입니다.";
   }
-  if (state === "completed") {
+  if (stateValue === "completed") {
     return "완료되었습니다.";
   }
-  if (state === "failed") {
+  if (stateValue === "failed") {
     return "실패했습니다.";
   }
   return "대기 중입니다.";
-}
-
-function renderArtifacts(artifacts) {
-  artifactToolbar.innerHTML = "";
-
-  if (!artifacts.length) {
-    const failureMessage =
-      state.snapshot?.status === "failed" && state.snapshot?.error
-        ? `<p class="artifact-error">${escapeHtml(state.snapshot.error)}</p>`
-        : "";
-
-    artifactPreview.innerHTML = `
-      <div class="empty-state compact">
-        <h3>아직 생성된 파일이 없습니다</h3>
-        <p>명세 문서와 구현 실행 계획은 마지막 단계에서 표시됩니다.</p>
-        ${failureMessage}
-      </div>
-    `;
-    return;
-  }
-
-  if (!state.activeArtifact || !artifacts.some((artifact) => artifact.filename === state.activeArtifact)) {
-    state.activeArtifact = artifacts[0].filename;
-  }
-
-  for (const artifact of artifacts) {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = `artifact-tab${artifact.filename === state.activeArtifact ? " active" : ""}`;
-    button.textContent = artifact.filename;
-    button.addEventListener("click", () => {
-      state.activeArtifact = artifact.filename;
-      renderArtifacts(artifacts);
-    });
-    artifactToolbar.append(button);
-  }
-
-  const activeArtifact = artifacts.find((artifact) => artifact.filename === state.activeArtifact) ?? artifacts[0];
-  artifactPreview.innerHTML = `
-    <div class="artifact-actions">
-      <a class="download-link" href="${activeArtifact.url}" download="${activeArtifact.filename}">파일 다운로드</a>
-    </div>
-    ${renderArtifactContent(activeArtifact)}
-  `;
-}
-
-function renderArtifactContent(artifact) {
-  if (isMarkdownArtifact(artifact.filename)) {
-    return `<div class="markdown-body">${renderMarkdown(artifact.content)}</div>`;
-  }
-
-  return `<pre class="code-block"><code>${escapeHtml(artifact.content)}</code></pre>`;
-}
-
-function isMarkdownArtifact(filename) {
-  return filename.toLowerCase().endsWith(".md");
 }
 
 boot();

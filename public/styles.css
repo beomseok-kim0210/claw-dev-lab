@@ -13,6 +13,7 @@
   --backend: #177e89;
   --frontend: #276749;
   --ai: #8f5d1d;
+  --infra: #3559b7;
   --user: #1f3a93;
   --shadow: 0 24px 60px rgba(31, 36, 33, 0.08);
 }
@@ -248,6 +249,10 @@ body {
   line-height: 1.6;
 }
 
+.hidden {
+  display: none;
+}
+
 .phase-list {
   margin: 0;
   padding: 0;
@@ -371,6 +376,11 @@ body {
 .message-card[data-role="ai"] {
   border-color: rgba(143, 93, 29, 0.22);
   background: linear-gradient(180deg, rgba(143, 93, 29, 0.12), rgba(255, 255, 255, 0.82));
+}
+
+.message-card[data-role="infra"] {
+  border-color: rgba(53, 89, 183, 0.2);
+  background: linear-gradient(180deg, rgba(53, 89, 183, 0.12), rgba(255, 255, 255, 0.82));
 }
 
 .message-card[data-role="user"] {
@@ -542,6 +552,78 @@ body {
   background: rgba(180, 35, 24, 0.08);
   color: #8f2318;
   line-height: 1.5;
+}
+
+.clarification-card {
+  border-radius: 24px;
+  border: 1px solid rgba(53, 89, 183, 0.16);
+  background: rgba(245, 248, 255, 0.82);
+  padding: 1rem;
+}
+
+.clarification-summary {
+  margin: 0;
+  line-height: 1.6;
+  color: var(--muted);
+}
+
+.clarification-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  margin-top: 0.9rem;
+}
+
+.clarification-question {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding: 0.95rem;
+  border-radius: 18px;
+  border: 1px solid rgba(53, 89, 183, 0.14);
+  background: rgba(255, 255, 255, 0.82);
+}
+
+.clarification-meta {
+  font-size: 0.74rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.clarification-text,
+.clarification-reason,
+.clarification-answer {
+  margin: 0;
+  line-height: 1.55;
+}
+
+.clarification-reason {
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
+.clarification-answer {
+  padding: 0.85rem 0.95rem;
+  border-radius: 14px;
+  background: rgba(53, 89, 183, 0.08);
+}
+
+.clarification-input {
+  width: 100%;
+  min-height: 110px;
+  resize: vertical;
+  border-radius: 16px;
+  border: 1px solid rgba(53, 89, 183, 0.14);
+  padding: 0.8rem 0.9rem;
+  font: inherit;
+  background: white;
+  color: var(--ink);
+}
+
+.clarification-submit {
+  width: 100%;
+  justify-content: center;
 }
 
 @keyframes rise-in {

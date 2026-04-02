@@ -8,6 +8,7 @@ import {
   type AIFeaturesSpec,
   type PMFinalDecision,
 } from "../types/contracts.js";
+import { buildDeterministicAIDiscussion } from "./discussionFallbacks.js";
 import { buildDeterministicAIFeaturesSpec } from "./specFallbacks.js";
 
 export async function runAIDiscussion(args: {
@@ -16,10 +17,17 @@ export async function runAIDiscussion(args: {
   messages: ChatMessage[];
 }): Promise<AIDiscussion> {
   const prompt = buildAIDiscussionPrompt(args.userRequest, args.messages);
-  return args.client.generateStructured({
-    ...prompt,
-    schema: aiDiscussionSchema,
-  });
+  try {
+    return await args.client.generateStructured({
+      ...prompt,
+      schema: aiDiscussionSchema,
+      temperature: 0.1,
+      numPredict: 600,
+      maxRetries: 5,
+    });
+  } catch {
+    return buildDeterministicAIDiscussion(args);
+  }
 }
 
 export async function generateAIFeaturesSpec(args: {

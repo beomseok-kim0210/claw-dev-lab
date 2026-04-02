@@ -1,12 +1,16 @@
-import { AGENT_SPEAKERS, type AgentRole, type ChatMessage, type ChatRole } from "../types/chat.js";
+import { AGENT_SPEAKERS, USER_SPEAKER, type AgentRole, type ChatMessage, type ChatRole } from "../types/chat.js";
 
 export class ChatStateManager {
   private readonly messages: ChatMessage[] = [];
   private sequence = 1;
 
   addUserRequest(content: string): ChatMessage {
+    return this.addUserMessage(content);
+  }
+
+  addUserMessage(content: string): ChatMessage {
     return this.addMessage({
-      speaker: "사용자",
+      speaker: USER_SPEAKER,
       role: "user",
       content,
     });
@@ -33,6 +37,7 @@ export class ChatStateManager {
       turn: this.messages.length,
       timestamp: new Date().toISOString(),
     };
+
     this.messages.push(message);
     this.sequence += 1;
     return message;

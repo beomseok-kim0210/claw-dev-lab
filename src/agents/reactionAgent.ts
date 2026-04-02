@@ -2,21 +2,27 @@ import { OllamaClient } from "../llm/ollamaClient.js";
 import { buildReactionPrompt } from "../prompts/reaction.js";
 import type { ChatMessage } from "../types/chat.js";
 import { agentReactionSchema, type AgentReaction } from "../types/contracts.js";
+import { buildDeterministicReaction } from "./discussionFallbacks.js";
 
 export async function runAgentReaction(args: {
   client: OllamaClient;
-  role: "backend" | "frontend" | "ai";
+  role: "backend" | "frontend" | "ai" | "infra";
   userRequest: string;
   messages: ChatMessage[];
   targetMessage: ChatMessage;
 }): Promise<AgentReaction> {
   const prompt = buildReactionPrompt(args);
-  return args.client.generateStructured({
-    ...prompt,
-    schema: agentReactionSchema,
-    temperature: 0.1,
-    numPredict: 350,
-  });
+  try {
+    return await args.client.generateStructured({
+      ...prompt,
+      schema: agentReactionSchema,
+      temperature: 0.1,
+      numPredict: 350,
+      maxRetries: 5,
+    });
+  } catch {
+    return buildDeterministicReaction(args);
+  }
 }
 
 export function formatAgentReaction(reaction: AgentReaction): string {

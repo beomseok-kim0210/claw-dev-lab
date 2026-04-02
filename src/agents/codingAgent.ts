@@ -10,6 +10,7 @@ import {
   type ImplementationPlan,
   type ImplementationReview,
   type ImplementationUpdate,
+  type InfraSpec,
 } from "../types/contracts.js";
 
 type CodingRole = Exclude<AgentRole, "pm">;
@@ -24,6 +25,7 @@ export async function runImplementationUpdate(args: {
   backendSpec: BackendSpec;
   frontendSpec: FrontendSpec;
   aiFeaturesSpec: AIFeaturesSpec;
+  infraSpec: InfraSpec;
 }): Promise<ImplementationUpdate> {
   const prompt = buildImplementationUpdatePrompt(args);
 
@@ -109,7 +111,7 @@ export function formatImplementationUpdate(update: ImplementationUpdate): string
 export function formatImplementationReview(review: ImplementationReview): string {
   return [
     `제목: ${review.headline}`,
-    `메시지 유형: 코드 리뷰`,
+    "메시지 유형: 코드 리뷰",
     `반응 유형: ${reactionLabel(review.reactionType)}`,
     `대상 메시지: ${review.targetMessageId}`,
     "검토 파일:",
@@ -126,6 +128,9 @@ function roleTitle(role: CodingRole): string {
   }
   if (role === "frontend") {
     return "프론트엔드";
+  }
+  if (role === "infra") {
+    return "인프라";
   }
   return "AI";
 }

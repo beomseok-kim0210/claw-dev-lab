@@ -6,6 +6,7 @@ import {
   type BackendSpec,
   type FrontendSpec,
   type ImplementationPlan,
+  type InfraSpec,
   type PMFinalDecision,
 } from "../types/contracts.js";
 
@@ -16,6 +17,7 @@ type ImplementationPlannerArgs = {
   backendSpec: BackendSpec;
   frontendSpec: FrontendSpec;
   aiFeaturesSpec: AIFeaturesSpec;
+  infraSpec: InfraSpec;
 };
 
 export async function generateImplementationPlan(args: ImplementationPlannerArgs): Promise<ImplementationPlan> {
@@ -26,7 +28,7 @@ export async function generateImplementationPlan(args: ImplementationPlannerArgs
       ...prompt,
       schema: implementationPlanSchema,
       temperature: 0.1,
-      numPredict: 700,
+      numPredict: 800,
       maxRetries: 5,
     });
   } catch {
@@ -41,7 +43,7 @@ function buildDeterministicImplementationPlan(args: ImplementationPlannerArgs): 
       args.finalDecision.deliveryPlan[1],
       "역할별 구현을 통합하고 최종 검증을 수행한다.",
     ].filter((item): item is string => Boolean(item && item.trim().length > 0)),
-    2,
+    3,
   );
 
   const tasks: ImplementationPlan["tasks"] = [
@@ -49,18 +51,18 @@ function buildDeterministicImplementationPlan(args: ImplementationPlannerArgs): 
       id: "task-01",
       title: "MVP 범위와 작업 기준 확정",
       owner: "pm",
-      goal: "최종 MVP 범위, 우선순위, 제외 범위를 구현팀이 바로 사용할 수 있는 기준으로 정리한다.",
+      goal: "최종 MVP 범위와 제외 범위를 구현 팀이 같은 기준으로 사용할 수 있게 정리한다.",
       deliverables: takeAtLeast(
         [
-          `MVP 범위 정리: ${args.finalDecision.mvpScope[0] ?? "핵심 기능 정리"}`,
+          `MVP 범위 정리: ${args.finalDecision.mvpScope[0] ?? "핵심 기능 목록 정리"}`,
           `제외 범위 정리: ${args.finalDecision.nonGoals[0] ?? "후속 단계 기능 분리"}`,
         ],
         2,
       ),
       acceptanceCriteria: takeAtLeast(
         [
-          "팀이 동일한 MVP 범위를 기준으로 구현을 시작할 수 있다.",
-          "후속 단계로 미루는 항목이 명확히 구분되어 있다.",
+          "모든 역할이 같은 MVP 범위를 기준으로 구현을 시작할 수 있다.",
+          "후속 단계로 미루는 항목이 명확히 분리되어 있다.",
         ],
         2,
       ),
@@ -79,7 +81,7 @@ function buildDeterministicImplementationPlan(args: ImplementationPlannerArgs): 
       ),
       acceptanceCriteria: takeAtLeast(
         [
-          args.backendSpec.implementationSteps[0] ?? "백엔드 핵심 단계가 구현되어야 한다.",
+          args.backendSpec.implementationSteps[0] ?? "백엔드 주요 단계가 구현되어야 한다.",
           args.backendSpec.constraints[0] ?? "주요 기술 제약이 반영되어야 한다.",
         ],
         2,
@@ -99,8 +101,8 @@ function buildDeterministicImplementationPlan(args: ImplementationPlannerArgs): 
       ),
       acceptanceCriteria: takeAtLeast(
         [
-          args.frontendSpec.implementationSteps[0] ?? "프론트엔드 핵심 단계가 구현되어야 한다.",
-          args.frontendSpec.usabilityChecklist[0] ?? "주요 사용성 기준이 반영되어야 한다.",
+          args.frontendSpec.implementationSteps[0] ?? "프론트엔드 주요 단계가 구현되어야 한다.",
+          args.frontendSpec.usabilityChecklist[0] ?? "사용성 기준이 반영되어야 한다.",
         ],
         2,
       ),
@@ -125,26 +127,46 @@ function buildDeterministicImplementationPlan(args: ImplementationPlannerArgs): 
         2,
       ),
     },
+    {
+      id: "task-05",
+      title: "배포 환경과 운영 구성 정리",
+      owner: "infra",
+      goal: args.infraSpec.overview,
+      deliverables: takeAtLeast(
+        [
+          args.infraSpec.deploymentTopology[0] ?? "배포 토폴로지 정리",
+          args.infraSpec.environments[0] ?? "환경 분리 설정 정리",
+        ],
+        2,
+      ),
+      acceptanceCriteria: takeAtLeast(
+        [
+          args.infraSpec.implementationSteps[0] ?? "인프라 주요 단계가 구현되어야 한다.",
+          args.infraSpec.operationsChecklist[0] ?? "운영 체크리스트가 반영되어야 한다.",
+        ],
+        2,
+      ),
+    },
   ];
 
   return {
     overview: [
       "PM 최종 결정과 역할별 명세를 기준으로 구현 순서를 확정한다.",
-      "PM이 범위 기준을 고정한 뒤 백엔드, 프론트엔드, AI 작업을 순차적으로 진행하고 마지막에 통합 검증을 수행한다.",
+      "PM이 범위 기준을 고정한 뒤 백엔드, 프론트엔드, AI, 인프라 작업을 순차적으로 진행하고 마지막에 통합 검증을 수행한다.",
     ].join(" "),
     milestones,
     tasks,
     validationChecklist: takeAtLeast(
       [
-        "PM이 정의한 MVP 범위와 제외 범위가 구현 내용에 반영되어야 한다.",
-        "백엔드, 프론트엔드, AI 기능이 같은 사용자 흐름 기준으로 연결되어야 한다.",
+        "PM이 정의한 MVP 범위와 제외 범위가 구현 결과에 반영되어야 한다.",
+        "백엔드, 프론트엔드, AI, 인프라가 같은 사용자 흐름과 배포 구조를 기준으로 연결되어야 한다.",
         "생성된 산출물과 실제 구현 결과가 서로 충돌하지 않아야 한다.",
       ],
       2,
     ),
     kickoffPrompt: [
       "PM 최종 결정과 implementation-plan.md를 기준으로 작업을 시작하라.",
-      "task-01부터 task-04 순서로 진행하고, 각 task의 deliverables와 acceptanceCriteria를 충족해야 한다.",
+      "task-01부터 task-05 순서로 진행하고, 각 task의 deliverables와 acceptanceCriteria를 충족해야 한다.",
       `핵심 사용자 요청: ${args.userRequest}`,
     ].join(" "),
   };
@@ -153,7 +175,7 @@ function buildDeterministicImplementationPlan(args: ImplementationPlannerArgs): 
 function takeAtLeast(items: string[], minimum: number): string[] {
   const filtered = items.filter((item) => item.trim().length > 0);
   while (filtered.length < minimum) {
-    filtered.push("추가 구현 기준을 문서화한다.");
+    filtered.push("추가 구현 검토가 필요하다.");
   }
   return filtered;
 }

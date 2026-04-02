@@ -7,6 +7,7 @@ import {
   type PMFinalDecision,
   type PMInitialDiscussion,
 } from "../types/contracts.js";
+import { buildDeterministicPmFinalDecision, buildDeterministicPmInitialDiscussion } from "./discussionFallbacks.js";
 
 export async function runPmInitialDiscussion(args: {
   client: OllamaClient;
@@ -14,10 +15,17 @@ export async function runPmInitialDiscussion(args: {
   messages: ChatMessage[];
 }): Promise<PMInitialDiscussion> {
   const prompt = buildPmInitialPrompt(args.userRequest, args.messages);
-  return args.client.generateStructured({
-    ...prompt,
-    schema: pmInitialDiscussionSchema,
-  });
+  try {
+    return await args.client.generateStructured({
+      ...prompt,
+      schema: pmInitialDiscussionSchema,
+      temperature: 0.1,
+      numPredict: 500,
+      maxRetries: 5,
+    });
+  } catch {
+    return buildDeterministicPmInitialDiscussion(args);
+  }
 }
 
 export async function runPmFinalDecision(args: {
@@ -26,10 +34,17 @@ export async function runPmFinalDecision(args: {
   messages: ChatMessage[];
 }): Promise<PMFinalDecision> {
   const prompt = buildPmFinalPrompt(args.userRequest, args.messages);
-  return args.client.generateStructured({
-    ...prompt,
-    schema: pmFinalDecisionSchema,
-  });
+  try {
+    return await args.client.generateStructured({
+      ...prompt,
+      schema: pmFinalDecisionSchema,
+      temperature: 0.1,
+      numPredict: 700,
+      maxRetries: 5,
+    });
+  } catch {
+    return buildDeterministicPmFinalDecision(args);
+  }
 }
 
 export function formatPmInitialDiscussion(discussion: PMInitialDiscussion): string {

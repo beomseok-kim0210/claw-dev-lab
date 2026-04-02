@@ -1,4 +1,6 @@
 import path from "node:path";
+import readline from "node:readline/promises";
+import { stdin as input, stdout as output } from "node:process";
 
 import pc from "picocolors";
 
@@ -29,7 +31,7 @@ function printHelp(): void {
   process.stdout.write("  --help         도움말 출력\n");
   process.stdout.write("  --example      내장 예시 요청 실행\n");
   process.stdout.write("  --cwd          작업 디렉터리 지정\n");
-  process.stdout.write("  --output-dir   backend-spec.md, frontend-spec.md, ai-features.md 저장 경로\n");
+  process.stdout.write("  --output-dir   결과 문서와 생성 코드 출력 경로\n");
   process.stdout.write("  --model        Ollama 모델 이름 덮어쓰기\n");
   process.stdout.write("  --base-url     Ollama 기본 URL 덮어쓰기\n");
 }
@@ -126,16 +128,46 @@ async function main(): Promise<void> {
     timeoutMs: config.timeoutMs,
   });
 
-  const orchestrator = new MultiAgentOrchestrator({
-    client,
-    outputDir: config.outputDir,
-  });
+  const pipedAnswers = input.isTTY ? [] : await readPipedAnswers();
+  const rl = input.isTTY ? readline.createInterface({ input, output }) : undefined;
+  try {
+    const orchestrator = new MultiAgentOrchestrator({
+      client,
+      outputDir: config.outputDir,
+      hooks: {
+        async onClarificationRequest(plan) {
+          process.stdout.write(`\n[추가 확인] ${plan.summary}\n`);
+          const answers = [];
+          for (const question of plan.questions) {
+            process.stdout.write(
+              `- ${question.id} | ${question.askedBy} | ${question.topic}\n  이유: ${question.reason}\n`,
+            );
+            let answer = "";
+            if (pipedAnswers.length > 0) {
+              answer = pipedAnswers.shift() ?? "";
+              process.stdout.write(`  답변: ${answer}\n`);
+            } else if (rl) {
+              answer = (await rl.question(`  답변: `)).trim();
+            }
+            answers.push({
+              questionId: question.id,
+              answer: answer.length > 0 ? answer : "추가 정보 없이 기본 가정으로 진행합니다.",
+            });
+          }
+          process.stdout.write("\n");
+          return answers;
+        },
+      },
+    });
 
-  process.stdout.write(`사용 모델: ${config.ollamaModel} (${config.ollamaBaseUrl})\n`);
-  process.stdout.write(`출력 디렉터리: ${config.outputDir}\n`);
+    process.stdout.write(`사용 모델: ${config.ollamaModel} (${config.ollamaBaseUrl})\n`);
+    process.stdout.write(`출력 디렉터리: ${config.outputDir}\n`);
 
-  const result = await orchestrator.run(request);
-  printExecutionReport(result);
+    const result = await orchestrator.run(request);
+    printExecutionReport(result);
+  } finally {
+    rl?.close();
+  }
 }
 
 main().catch((error) => {
@@ -143,3 +175,16 @@ main().catch((error) => {
   process.stderr.write(`${pc.red(`오류: ${message}`)}\n`);
   process.exitCode = 1;
 });
+
+async function readPipedAnswers(): Promise<string[]> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of input) {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+  }
+
+  return Buffer.concat(chunks)
+    .toString("utf8")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+}

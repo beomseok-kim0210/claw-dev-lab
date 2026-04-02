@@ -8,6 +8,7 @@ import {
   type BackendSpec,
   type PMFinalDecision,
 } from "../types/contracts.js";
+import { buildDeterministicBackendDiscussion } from "./discussionFallbacks.js";
 import { buildDeterministicBackendSpec } from "./specFallbacks.js";
 
 export async function runBackendDiscussion(args: {
@@ -16,10 +17,17 @@ export async function runBackendDiscussion(args: {
   messages: ChatMessage[];
 }): Promise<BackendDiscussion> {
   const prompt = buildBackendDiscussionPrompt(args.userRequest, args.messages);
-  return args.client.generateStructured({
-    ...prompt,
-    schema: backendDiscussionSchema,
-  });
+  try {
+    return await args.client.generateStructured({
+      ...prompt,
+      schema: backendDiscussionSchema,
+      temperature: 0.1,
+      numPredict: 600,
+      maxRetries: 5,
+    });
+  } catch {
+    return buildDeterministicBackendDiscussion(args);
+  }
 }
 
 export async function generateBackendSpec(args: {

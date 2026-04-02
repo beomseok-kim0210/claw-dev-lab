@@ -1,5 +1,11 @@
 import type { AgentRole, ChatMessage } from "../types/chat.js";
-import type { AIFeaturesSpec, BackendSpec, FrontendSpec, ImplementationPlan } from "../types/contracts.js";
+import type {
+  AIFeaturesSpec,
+  BackendSpec,
+  FrontendSpec,
+  ImplementationPlan,
+  InfraSpec,
+} from "../types/contracts.js";
 import { buildHarnessPrompt } from "./shared.js";
 
 type CodingRole = Exclude<AgentRole, "pm">;
@@ -13,6 +19,7 @@ type BuildImplementationUpdatePromptArgs = {
   backendSpec: BackendSpec;
   frontendSpec: FrontendSpec;
   aiFeaturesSpec: AIFeaturesSpec;
+  infraSpec: InfraSpec;
 };
 
 type BuildImplementationReviewPromptArgs = {
@@ -59,6 +66,10 @@ export function buildImplementationUpdatePrompt(args: BuildImplementationUpdateP
       {
         title: "AI 명세 핵심",
         lines: [args.aiFeaturesSpec.overview, ...args.aiFeaturesSpec.implementationSteps.map((item) => `- ${item}`)],
+      },
+      {
+        title: "인프라 명세 핵심",
+        lines: [args.infraSpec.overview, ...args.infraSpec.implementationSteps.map((item) => `- ${item}`)],
       },
     ],
     contract: {
@@ -144,6 +155,14 @@ function roleResponsibilities(role: CodingRole): string[] {
     ];
   }
 
+  if (role === "infra") {
+    return [
+      "환경 변수, 배포 스크립트, 컨테이너 구성을 운영 가능하게 정리한다.",
+      "로컬 실행과 배포 환경의 차이를 분리해서 고정한다.",
+      "헬스 체크와 시작 절차를 놓치지 않는다.",
+    ];
+  }
+
   return [
     "요청 분석과 초안 생성 로직을 별도 모듈로 분리한다.",
     "백엔드가 호출할 수 있는 순수 함수 중심 구조를 만든다.",
@@ -157,6 +176,9 @@ function roleLabel(role: CodingRole): string {
   }
   if (role === "frontend") {
     return "프론트엔드";
+  }
+  if (role === "infra") {
+    return "인프라";
   }
   return "AI";
 }

@@ -10,9 +10,19 @@ import { loadServerConfig } from "./config.js";
 import { OllamaClient } from "./llm/ollamaClient.js";
 import { MultiAgentOrchestrator } from "./orchestrator/multiAgentOrchestrator.js";
 import { SessionStore } from "./server/sessionStore.js";
+import type { ClarificationAnswer } from "./types/orchestration.js";
 
 const createSessionSchema = z.object({
   request: z.string().trim().min(10).max(4000),
+});
+
+const clarificationAnswerSchema = z.object({
+  questionId: z.string().regex(/^clarify-\d{2}$/),
+  answer: z.string().trim().min(1).max(4000),
+});
+
+const submitClarificationSchema = z.object({
+  answers: z.array(clarificationAnswerSchema).min(1).max(3),
 });
 
 const config = loadServerConfig();
@@ -52,6 +62,19 @@ const server = createServer(async (req, res) => {
         return sendJson(res, 404, { error: "세션을 찾을 수 없습니다." });
       }
       return sendJson(res, 200, session);
+    }
+
+    const clarificationMatch = requestUrl.pathname.match(/^\/api\/sessions\/([^/]+)\/clarifications$/);
+    if (method === "POST" && clarificationMatch?.[1]) {
+      const sessionId = clarificationMatch[1];
+      if (!sessionStore.getSession(sessionId)) {
+        return sendJson(res, 404, { error: "세션을 찾을 수 없습니다." });
+      }
+
+      const payload = submitClarificationSchema.parse(await readJson(req));
+      sessionStore.setStatus(sessionId, "running");
+      const snapshot = sessionStore.submitClarificationAnswers(sessionId, payload.answers as ClarificationAnswer[]);
+      return sendJson(res, 202, snapshot);
     }
 
     const eventMatch = requestUrl.pathname.match(/^\/api\/sessions\/([^/]+)\/events$/);
@@ -108,6 +131,12 @@ async function runSession(sessionId: string, userRequest: string): Promise<void>
         },
         onArtifacts(artifacts) {
           sessionStore.setArtifacts(sessionId, artifacts);
+        },
+        async onClarificationRequest(plan) {
+          sessionStore.setStatus(sessionId, "waiting_input");
+          const answers = await sessionStore.requestClarification(sessionId, plan);
+          sessionStore.setStatus(sessionId, "running");
+          return answers;
         },
       },
     });

@@ -5,19 +5,36 @@ import type {
   AgentReaction,
   BackendDiscussion,
   BackendSpec,
+  ClarificationPlan,
+  ClarificationQuestion,
   FrontendDiscussion,
   FrontendSpec,
   ImplementationPlan,
+  InfraDiscussion,
+  InfraSpec,
   PMFinalDecision,
   PMInitialDiscussion,
 } from "./contracts.js";
+
+export type ClarificationAnswer = {
+  questionId: ClarificationQuestion["id"];
+  answer: string;
+};
+
+export type ClarificationExchange = {
+  summary: string;
+  questions: ClarificationQuestion[];
+  answers: ClarificationAnswer[];
+};
 
 export type DiscussionBundle = {
   pmInitial: PMInitialDiscussion;
   backend: BackendDiscussion;
   frontend: FrontendDiscussion;
   ai: AIDiscussion;
+  infra: InfraDiscussion;
   reactions: AgentReaction[];
+  clarification?: ClarificationExchange;
   pmFinal: PMFinalDecision;
 };
 
@@ -31,6 +48,7 @@ export type GeneratedSpecs = {
   backend: BackendSpec;
   frontend: FrontendSpec;
   ai: AIFeaturesSpec;
+  infra: InfraSpec;
   implementation: ImplementationPlan;
 };
 
@@ -38,6 +56,7 @@ export type OrchestrationPhaseKey =
   | "user"
   | "pm-initial"
   | "discussion"
+  | "clarification"
   | "pm-final"
   | "execution"
   | "implementation"
@@ -57,6 +76,7 @@ export type OrchestrationHooks = {
   onMessage?: (message: ChatMessage) => void | Promise<void>;
   onPhase?: (phase: OrchestrationPhaseUpdate) => void | Promise<void>;
   onArtifacts?: (artifacts: GeneratedArtifact[]) => void | Promise<void>;
+  onClarificationRequest?: (plan: ClarificationPlan) => Promise<ClarificationAnswer[]>;
 };
 
 export type OrchestrationResult = {

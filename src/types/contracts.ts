@@ -3,7 +3,7 @@ import { z } from "zod";
 const messageReferenceSchema = z.string().regex(/^msg-\d{3}$/);
 const shortBulletListSchema = z.array(z.string().min(1)).min(2).max(5);
 const mediumBulletListSchema = z.array(z.string().min(1)).min(3).max(6);
-const referenceListSchema = z.array(messageReferenceSchema).min(1).max(5);
+const referenceListSchema = z.array(messageReferenceSchema).min(1).max(6);
 
 export const pmInitialDiscussionSchema = z
   .object({
@@ -51,6 +51,14 @@ export const aiDiscussionSchema = agentDiscussionBaseSchema
   })
   .strict();
 
+export const infraDiscussionSchema = agentDiscussionBaseSchema
+  .extend({
+    deploymentTopology: mediumBulletListSchema,
+    environments: shortBulletListSchema,
+    observability: shortBulletListSchema,
+  })
+  .strict();
+
 export const agentReactionSchema = z
   .object({
     headline: z.string().min(1),
@@ -63,13 +71,31 @@ export const agentReactionSchema = z
   })
   .strict();
 
+export const clarificationQuestionSchema = z
+  .object({
+    id: z.string().regex(/^clarify-\d{2}$/),
+    askedBy: z.enum(["pm", "backend", "frontend", "ai", "infra"]),
+    topic: z.enum(["scope", "api", "data", "ui", "ai", "infra"]),
+    question: z.string().min(1),
+    reason: z.string().min(1),
+  })
+  .strict();
+
+export const clarificationPlanSchema = z
+  .object({
+    needsInput: z.boolean(),
+    summary: z.string().min(1),
+    questions: z.array(clarificationQuestionSchema).max(3),
+  })
+  .strict();
+
 export const pmFinalDecisionSchema = z
   .object({
     headline: z.string().min(1),
     summary: z.string().min(1),
     mvpScope: mediumBulletListSchema,
     nonGoals: shortBulletListSchema,
-    deliveryPlan: shortBulletListSchema,
+    deliveryPlan: mediumBulletListSchema,
     finalDecision: z.string().min(1),
     references: referenceListSchema,
   })
@@ -116,11 +142,22 @@ export const aiFeaturesSpecSchema = z
   })
   .strict();
 
+export const infraSpecSchema = z
+  .object({
+    overview: z.string().min(1),
+    deploymentTopology: mediumBulletListSchema,
+    environments: mediumBulletListSchema,
+    operationsChecklist: shortBulletListSchema,
+    implementationSteps: mediumBulletListSchema,
+    exampleCode: codeExampleSchema(["yaml", "dockerfile", "sh", "json"]),
+  })
+  .strict();
+
 const implementationTaskSchema = z
   .object({
     id: z.string().regex(/^task-\d{2}$/),
     title: z.string().min(1),
-    owner: z.enum(["pm", "backend", "frontend", "ai"]),
+    owner: z.enum(["pm", "backend", "frontend", "ai", "infra"]),
     goal: z.string().min(1),
     deliverables: shortBulletListSchema,
     acceptanceCriteria: shortBulletListSchema,
@@ -130,8 +167,8 @@ const implementationTaskSchema = z
 export const implementationPlanSchema = z
   .object({
     overview: z.string().min(1),
-    milestones: shortBulletListSchema,
-    tasks: z.array(implementationTaskSchema).min(4).max(4),
+    milestones: mediumBulletListSchema,
+    tasks: z.array(implementationTaskSchema).min(5).max(5),
     validationChecklist: shortBulletListSchema,
     kickoffPrompt: z.string().min(1),
   })
@@ -142,7 +179,7 @@ export const implementationUpdateSchema = z
     headline: z.string().min(1),
     taskId: z.string().regex(/^task-\d{2}$/),
     objective: z.string().min(1),
-    targetFiles: z.array(z.string().min(1)).min(1).max(6),
+    targetFiles: z.array(z.string().min(1)).min(1).max(8),
     worklog: shortBulletListSchema,
     validation: shortBulletListSchema,
     references: referenceListSchema,
@@ -154,7 +191,7 @@ export const implementationReviewSchema = z
     headline: z.string().min(1),
     reactionType: z.enum(["challenge", "support", "refine"]),
     targetMessageId: messageReferenceSchema,
-    targetFiles: z.array(z.string().min(1)).min(1).max(6),
+    targetFiles: z.array(z.string().min(1)).min(1).max(8),
     assessment: z.string().min(1),
     adjustment: z.string().min(1),
     references: referenceListSchema,
@@ -165,11 +202,15 @@ export type PMInitialDiscussion = z.infer<typeof pmInitialDiscussionSchema>;
 export type BackendDiscussion = z.infer<typeof backendDiscussionSchema>;
 export type FrontendDiscussion = z.infer<typeof frontendDiscussionSchema>;
 export type AIDiscussion = z.infer<typeof aiDiscussionSchema>;
+export type InfraDiscussion = z.infer<typeof infraDiscussionSchema>;
 export type AgentReaction = z.infer<typeof agentReactionSchema>;
+export type ClarificationQuestion = z.infer<typeof clarificationQuestionSchema>;
+export type ClarificationPlan = z.infer<typeof clarificationPlanSchema>;
 export type PMFinalDecision = z.infer<typeof pmFinalDecisionSchema>;
 export type BackendSpec = z.infer<typeof backendSpecSchema>;
 export type FrontendSpec = z.infer<typeof frontendSpecSchema>;
 export type AIFeaturesSpec = z.infer<typeof aiFeaturesSpecSchema>;
+export type InfraSpec = z.infer<typeof infraSpecSchema>;
 export type ImplementationPlan = z.infer<typeof implementationPlanSchema>;
 export type ImplementationUpdate = z.infer<typeof implementationUpdateSchema>;
 export type ImplementationReview = z.infer<typeof implementationReviewSchema>;

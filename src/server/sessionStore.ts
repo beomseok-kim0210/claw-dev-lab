@@ -1,22 +1,41 @@
 import { randomUUID } from "node:crypto";
 
 import type { ChatMessage } from "../types/chat.js";
-import type { GeneratedArtifact, OrchestrationPhaseKey, OrchestrationPhaseUpdate } from "../types/orchestration.js";
-import type { SessionArtifact, SessionEvent, SessionPhase, SessionSnapshot, SessionStatus } from "../types/session.js";
+import type { ClarificationPlan } from "../types/contracts.js";
+import type {
+  ClarificationAnswer,
+  GeneratedArtifact,
+  OrchestrationPhaseKey,
+  OrchestrationPhaseUpdate,
+} from "../types/orchestration.js";
+import type {
+  SessionArtifact,
+  SessionClarification,
+  SessionEvent,
+  SessionPhase,
+  SessionSnapshot,
+  SessionStatus,
+} from "../types/session.js";
 
 const DEFAULT_PHASES: Array<{ key: OrchestrationPhaseKey; label: string }> = [
   { key: "user", label: "사용자 요청" },
   { key: "pm-initial", label: "PM 문제 정의" },
   { key: "discussion", label: "자유 토론" },
+  { key: "clarification", label: "추가 확인" },
   { key: "pm-final", label: "PM 최종 결정" },
   { key: "execution", label: "명세 산출물" },
   { key: "implementation", label: "구현 실행 계획" },
   { key: "coding", label: "코드 구현" },
 ];
 
+type PendingClarification = {
+  resolve: (answers: ClarificationAnswer[]) => void;
+};
+
 type SessionRecord = {
   snapshot: SessionSnapshot;
   listeners: Set<(event: SessionEvent) => void>;
+  pendingClarification?: PendingClarification;
 };
 
 export class SessionStore {
@@ -76,6 +95,8 @@ export class SessionStore {
 
     if (error !== undefined) {
       record.snapshot.error = error;
+    } else if (status !== "failed") {
+      delete record.snapshot.error;
     }
 
     this.emit(id, {
@@ -153,10 +174,59 @@ export class SessionStore {
     return record?.snapshot.artifacts.find((artifact) => artifact.filename === filename);
   }
 
+  requestClarification(id: string, plan: ClarificationPlan): Promise<ClarificationAnswer[]> {
+    const record = this.requireRecord(id);
+    if (record.pendingClarification) {
+      throw new Error("이미 답변 대기 중인 질문이 있습니다.");
+    }
+
+    const clarification: SessionClarification = {
+      summary: plan.summary,
+      questions: plan.questions,
+      answers: [],
+      state: "pending",
+    };
+
+    record.snapshot.clarification = clarification;
+    record.snapshot.updatedAt = new Date().toISOString();
+
+    this.emit(id, {
+      type: "clarification",
+      clarification: this.cloneClarification(clarification),
+    });
+
+    return new Promise<ClarificationAnswer[]>((resolve) => {
+      record.pendingClarification = { resolve };
+    });
+  }
+
+  submitClarificationAnswers(id: string, answers: ClarificationAnswer[]): SessionSnapshot {
+    const record = this.requireRecord(id);
+    const pending = record.pendingClarification;
+    const clarification = record.snapshot.clarification;
+
+    if (!pending || !clarification || clarification.state !== "pending") {
+      throw new Error("현재 답변 대기 중인 질문이 없습니다.");
+    }
+
+    clarification.answers = answers.map((item) => ({ ...item }));
+    clarification.state = "answered";
+    record.snapshot.updatedAt = new Date().toISOString();
+    delete record.pendingClarification;
+
+    this.emit(id, {
+      type: "clarification",
+      clarification: this.cloneClarification(clarification),
+    });
+
+    pending.resolve(answers.map((item) => ({ ...item })));
+    return this.cloneSnapshot(record.snapshot);
+  }
+
   private requireRecord(id: string): SessionRecord {
     const record = this.sessions.get(id);
     if (!record) {
-      throw new Error(`알 수 없는 세션입니다: ${id}`);
+      throw new Error(`존재하지 않는 세션입니다: ${id}`);
     }
     return record;
   }
@@ -174,6 +244,15 @@ export class SessionStore {
       transcript: snapshot.transcript.map((message) => ({ ...message })),
       phases: snapshot.phases.map((phase) => ({ ...phase })),
       artifacts: snapshot.artifacts.map((artifact) => ({ ...artifact })),
+      ...(snapshot.clarification ? { clarification: this.cloneClarification(snapshot.clarification) } : {}),
+    };
+  }
+
+  private cloneClarification(clarification: SessionClarification): SessionClarification {
+    return {
+      ...clarification,
+      questions: clarification.questions.map((question) => ({ ...question })),
+      answers: clarification.answers.map((answer) => ({ ...answer })),
     };
   }
 }

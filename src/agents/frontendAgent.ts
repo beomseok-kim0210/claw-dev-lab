@@ -8,6 +8,7 @@ import {
   type FrontendSpec,
   type PMFinalDecision,
 } from "../types/contracts.js";
+import { buildDeterministicFrontendDiscussion } from "./discussionFallbacks.js";
 import { buildDeterministicFrontendSpec } from "./specFallbacks.js";
 
 export async function runFrontendDiscussion(args: {
@@ -16,10 +17,17 @@ export async function runFrontendDiscussion(args: {
   messages: ChatMessage[];
 }): Promise<FrontendDiscussion> {
   const prompt = buildFrontendDiscussionPrompt(args.userRequest, args.messages);
-  return args.client.generateStructured({
-    ...prompt,
-    schema: frontendDiscussionSchema,
-  });
+  try {
+    return await args.client.generateStructured({
+      ...prompt,
+      schema: frontendDiscussionSchema,
+      temperature: 0.1,
+      numPredict: 600,
+      maxRetries: 5,
+    });
+  } catch {
+    return buildDeterministicFrontendDiscussion(args);
+  }
 }
 
 export async function generateFrontendSpec(args: {
