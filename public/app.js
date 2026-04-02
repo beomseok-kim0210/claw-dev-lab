@@ -9,10 +9,12 @@ const state = {
 };
 
 const requestInput = document.getElementById("requestInput");
+const targetDirectoryInput = document.getElementById("targetDirectoryInput");
 const submitButton = document.getElementById("submitButton");
 const exampleButton = document.getElementById("exampleButton");
 const sessionIdValue = document.getElementById("sessionIdValue");
 const sessionStatusValue = document.getElementById("sessionStatusValue");
+const targetDirectoryValue = document.getElementById("targetDirectoryValue");
 const healthChip = document.getElementById("healthChip");
 const modelChip = document.getElementById("modelChip");
 const phaseList = document.getElementById("phaseList");
@@ -46,7 +48,10 @@ submitButton.addEventListener("click", async () => {
       headers: {
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ request }),
+      body: JSON.stringify({
+        request,
+        targetDirectory: targetDirectoryInput.value.trim() || undefined,
+      }),
     });
 
     if (!response.ok) {
@@ -78,6 +83,9 @@ async function loadHealth() {
     healthChip.textContent = payload.ok ? "Ollama 연결됨" : "Ollama 연결 실패";
     healthChip.classList.toggle("healthy", Boolean(payload.ok));
     modelChip.textContent = payload.model ?? "qwen3";
+    if (!targetDirectoryInput.value && payload.defaultTargetDirectory) {
+      targetDirectoryInput.value = payload.defaultTargetDirectory;
+    }
   } catch {
     healthChip.textContent = "Ollama 연결 실패";
     healthChip.classList.remove("healthy");
@@ -160,6 +168,7 @@ function openSessionStream(sessionId) {
 function applySnapshot(snapshot) {
   sessionIdValue.textContent = snapshot.id;
   sessionStatusValue.textContent = formatStatus(snapshot.status, snapshot.error);
+  targetDirectoryValue.textContent = snapshot.targetDirectory ?? "세션 출력 폴더 사용";
   renderPhases(snapshot.phases);
   renderClarification(snapshot.clarification, snapshot.status);
   renderTranscript(snapshot.transcript);
@@ -608,6 +617,7 @@ function resetSessionView() {
   state.activeArtifact = null;
   sessionIdValue.textContent = "시작 중...";
   sessionStatusValue.textContent = "대기 중";
+  targetDirectoryValue.textContent = targetDirectoryInput.value.trim() || "세션 출력 폴더 사용";
   renderPhases(defaultPhases());
   renderClarification(undefined, "queued");
   renderTranscript([]);

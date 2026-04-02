@@ -25,36 +25,38 @@ type CodeScaffolderArgs = {
   frontendSpec: FrontendSpec;
   aiFeaturesSpec: AIFeaturesSpec;
   infraSpec: InfraSpec;
+  codePathPrefix?: string;
 };
 
 export function buildCodeArtifacts(args: CodeScaffolderArgs): PendingCodeArtifact[] {
   const meta = buildProjectMeta(args.userRequest, args.finalDecision);
+  const codePathPrefix = args.codePathPrefix ?? "generated-app";
 
   if (args.owner === "backend") {
     return [
       {
         owner: "backend",
-        filename: path.posix.join("generated-app", "package.json"),
+        filename: path.posix.join(codePathPrefix, "package.json"),
         content: renderPackageJson(meta.packageName),
       },
       {
         owner: "backend",
-        filename: path.posix.join("generated-app", "tsconfig.json"),
+        filename: path.posix.join(codePathPrefix, "tsconfig.json"),
         content: renderTsconfig(),
       },
       {
         owner: "backend",
-        filename: path.posix.join("generated-app", "src", "shared", "contracts.ts"),
+        filename: path.posix.join(codePathPrefix, "src", "shared", "contracts.ts"),
         content: renderContractsFile(meta.title, args.finalDecision, args.backendSpec, args.frontendSpec, args.aiFeaturesSpec, args.infraSpec),
       },
       {
         owner: "backend",
-        filename: path.posix.join("generated-app", "src", "data", "store.ts"),
+        filename: path.posix.join(codePathPrefix, "src", "data", "store.ts"),
         content: renderStoreFile(),
       },
       {
         owner: "backend",
-        filename: path.posix.join("generated-app", "src", "server.ts"),
+        filename: path.posix.join(codePathPrefix, "src", "server.ts"),
         content: renderServerFile(meta.title),
       },
     ];
@@ -64,17 +66,17 @@ export function buildCodeArtifacts(args: CodeScaffolderArgs): PendingCodeArtifac
     return [
       {
         owner: "frontend",
-        filename: path.posix.join("generated-app", "public", "index.html"),
+        filename: path.posix.join(codePathPrefix, "public", "index.html"),
         content: renderIndexHtml(meta.title),
       },
       {
         owner: "frontend",
-        filename: path.posix.join("generated-app", "public", "app.js"),
+        filename: path.posix.join(codePathPrefix, "public", "app.js"),
         content: renderFrontendApp(meta.title, args.finalDecision, args.frontendSpec),
       },
       {
         owner: "frontend",
-        filename: path.posix.join("generated-app", "public", "styles.css"),
+        filename: path.posix.join(codePathPrefix, "public", "styles.css"),
         content: renderFrontendStyles(),
       },
     ];
@@ -84,22 +86,22 @@ export function buildCodeArtifacts(args: CodeScaffolderArgs): PendingCodeArtifac
     return [
       {
         owner: "infra",
-        filename: path.posix.join("generated-app", ".env.example"),
+        filename: path.posix.join(codePathPrefix, ".env.example"),
         content: renderEnvExample(),
       },
       {
         owner: "infra",
-        filename: path.posix.join("generated-app", "Dockerfile"),
+        filename: path.posix.join(codePathPrefix, "Dockerfile"),
         content: renderDockerfile(),
       },
       {
         owner: "infra",
-        filename: path.posix.join("generated-app", "docker-compose.yml"),
+        filename: path.posix.join(codePathPrefix, "docker-compose.yml"),
         content: renderComposeYaml(),
       },
       {
         owner: "infra",
-        filename: path.posix.join("generated-app", "ops", "README.md"),
+        filename: path.posix.join(codePathPrefix, "ops", "README.md"),
         content: renderOpsReadme(args.infraSpec),
       },
     ];
@@ -108,7 +110,7 @@ export function buildCodeArtifacts(args: CodeScaffolderArgs): PendingCodeArtifac
   return [
     {
       owner: "ai",
-      filename: path.posix.join("generated-app", "src", "lib", "prdEngine.ts"),
+      filename: path.posix.join(codePathPrefix, "src", "lib", "prdEngine.ts"),
       content: renderPrdEngine(meta.title, args.finalDecision, args.aiFeaturesSpec),
     },
   ];

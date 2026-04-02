@@ -1,3 +1,4 @@
+import os from "node:os";
 import path from "node:path";
 
 import { config as loadEnv } from "dotenv";
@@ -26,6 +27,10 @@ export type AppConfig = {
 export type ServerConfig = AppConfig & {
   port: number;
 };
+
+export function resolveDefaultTargetDirectory(): string {
+  return path.resolve(os.homedir(), "Desktop", "multi-agent-workspace");
+}
 
 export function loadAppConfig(
   overrides?: Partial<Pick<AppConfig, "cwd" | "outputDir" | "ollamaBaseUrl" | "ollamaModel">>,

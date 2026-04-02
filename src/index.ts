@@ -4,7 +4,7 @@ import { stdin as input, stdout as output } from "node:process";
 
 import pc from "picocolors";
 
-import { DEFAULT_EXAMPLE_REQUEST, loadAppConfig } from "./config.js";
+import { DEFAULT_EXAMPLE_REQUEST, loadAppConfig, resolveDefaultTargetDirectory } from "./config.js";
 import { OllamaClient } from "./llm/ollamaClient.js";
 import { printExecutionReport } from "./orchestrator/consoleReporter.js";
 import { MultiAgentOrchestrator } from "./orchestrator/multiAgentOrchestrator.js";
@@ -12,6 +12,7 @@ import { MultiAgentOrchestrator } from "./orchestrator/multiAgentOrchestrator.js
 type ParsedArgs = {
   cwd: string;
   outputDir?: string;
+  targetDir?: string;
   model?: string;
   baseUrl?: string;
   request?: string;
@@ -25,13 +26,14 @@ function printHelp(): void {
   process.stdout.write('  npm run dev -- "AI 고객지원 대시보드를 설계해줘"\n');
   process.stdout.write("  npm run dev -- --example\n");
   process.stdout.write(
-    '  npm run dev -- --cwd E:\\repo --output-dir .\\artifacts --model qwen3 "PRD 워크스페이스를 설계해줘"\n\n',
+    '  npm run dev -- --cwd E:\\repo --output-dir .\\artifacts --target-dir C:\\Users\\me\\Desktop\\live-workspace --model qwen3 "PRD 워크스페이스를 설계해줘"\n\n',
   );
   process.stdout.write("옵션:\n");
   process.stdout.write("  --help         도움말 출력\n");
   process.stdout.write("  --example      내장 예시 요청 실행\n");
   process.stdout.write("  --cwd          작업 디렉터리 지정\n");
   process.stdout.write("  --output-dir   결과 문서와 생성 코드 출력 경로\n");
+  process.stdout.write(`  --target-dir   생성 코드를 직접 쓸 폴더 경로 (기본 예시: ${resolveDefaultTargetDirectory()})\n`);
   process.stdout.write("  --model        Ollama 모델 이름 덮어쓰기\n");
   process.stdout.write("  --base-url     Ollama 기본 URL 덮어쓰기\n");
 }
@@ -39,6 +41,7 @@ function printHelp(): void {
 function parseArgs(argv: string[]): ParsedArgs {
   let cwd = process.cwd();
   let outputDir: string | undefined;
+  let targetDir: string | undefined;
   let model: string | undefined;
   let baseUrl: string | undefined;
   let showHelp = false;
@@ -66,6 +69,10 @@ function parseArgs(argv: string[]): ParsedArgs {
         outputDir = path.resolve(argv[i + 1] ?? cwd);
         i += 1;
         break;
+      case "--target-dir":
+        targetDir = path.resolve(argv[i + 1] ?? cwd);
+        i += 1;
+        break;
       case "--model":
         model = argv[i + 1];
         i += 1;
@@ -88,6 +95,9 @@ function parseArgs(argv: string[]): ParsedArgs {
 
   if (outputDir !== undefined) {
     parsed.outputDir = outputDir;
+  }
+  if (targetDir !== undefined) {
+    parsed.targetDir = targetDir;
   }
   if (model !== undefined) {
     parsed.model = model;
@@ -134,6 +144,12 @@ async function main(): Promise<void> {
     const orchestrator = new MultiAgentOrchestrator({
       client,
       outputDir: config.outputDir,
+      ...(parsed.targetDir
+        ? {
+            codeOutputDir: parsed.targetDir,
+            codePathPrefix: "",
+          }
+        : {}),
       hooks: {
         async onClarificationRequest(plan) {
           process.stdout.write(`\n[추가 확인] ${plan.summary}\n`);
@@ -162,6 +178,9 @@ async function main(): Promise<void> {
 
     process.stdout.write(`사용 모델: ${config.ollamaModel} (${config.ollamaBaseUrl})\n`);
     process.stdout.write(`출력 디렉터리: ${config.outputDir}\n`);
+    if (parsed.targetDir) {
+      process.stdout.write(`코드 타깃 폴더: ${parsed.targetDir}\n`);
+    }
 
     const result = await orchestrator.run(request);
     printExecutionReport(result);

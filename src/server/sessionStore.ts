@@ -41,12 +41,13 @@ type SessionRecord = {
 export class SessionStore {
   private readonly sessions = new Map<string, SessionRecord>();
 
-  createSession(userRequest: string): SessionSnapshot {
+  createSession(userRequest: string, targetDirectory?: string): SessionSnapshot {
     const now = new Date().toISOString();
     const id = randomUUID();
     const snapshot: SessionSnapshot = {
       id,
       userRequest,
+      ...(targetDirectory ? { targetDirectory } : {}),
       status: "queued",
       createdAt: now,
       updatedAt: now,

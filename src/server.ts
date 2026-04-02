@@ -6,7 +6,7 @@ import { URL } from "node:url";
 
 import { z } from "zod";
 
-import { loadServerConfig } from "./config.js";
+import { loadServerConfig, resolveDefaultTargetDirectory } from "./config.js";
 import { OllamaClient } from "./llm/ollamaClient.js";
 import { MultiAgentOrchestrator } from "./orchestrator/multiAgentOrchestrator.js";
 import { SessionStore } from "./server/sessionStore.js";
@@ -14,6 +14,7 @@ import type { ClarificationAnswer } from "./types/orchestration.js";
 
 const createSessionSchema = z.object({
   request: z.string().trim().min(10).max(4000),
+  targetDirectory: z.string().trim().min(1).max(500).optional(),
 });
 
 const clarificationAnswerSchema = z.object({
@@ -45,13 +46,15 @@ const server = createServer(async (req, res) => {
         ok: true,
         model: config.ollamaModel,
         baseUrl: config.ollamaBaseUrl,
+        defaultTargetDirectory: resolveDefaultTargetDirectory(),
       });
     }
 
     if (method === "POST" && requestUrl.pathname === "/api/sessions") {
       const payload = createSessionSchema.parse(await readJson(req));
-      const session = sessionStore.createSession(payload.request);
-      void runSession(session.id, payload.request);
+      const targetDirectory = normalizeTargetDirectory(payload.targetDirectory);
+      const session = sessionStore.createSession(payload.request, targetDirectory);
+      void runSession(session.id, payload.request, targetDirectory);
       return sendJson(res, 202, session);
     }
 
@@ -115,13 +118,20 @@ server.listen(config.port, () => {
   process.stdout.write(`멀티 에이전트 웹 UI가 http://127.0.0.1:${config.port} 에서 실행 중입니다.\n`);
 });
 
-async function runSession(sessionId: string, userRequest: string): Promise<void> {
+async function runSession(sessionId: string, userRequest: string, targetDirectory?: string): Promise<void> {
   sessionStore.setStatus(sessionId, "running");
 
   try {
+    const sessionOutputDir = path.resolve(config.outputDir, sessionId);
     const orchestrator = new MultiAgentOrchestrator({
       client,
-      outputDir: path.resolve(config.outputDir, sessionId),
+      outputDir: sessionOutputDir,
+      ...(targetDirectory
+        ? {
+            codeOutputDir: targetDirectory,
+            codePathPrefix: "",
+          }
+        : {}),
       hooks: {
         onMessage(message) {
           sessionStore.appendMessage(sessionId, message);
@@ -249,4 +259,12 @@ function sendJson(res: import("node:http").ServerResponse, statusCode: number, b
     "Content-Type": "application/json; charset=utf-8",
   });
   res.end(JSON.stringify(body));
+}
+
+function normalizeTargetDirectory(raw: string | undefined): string | undefined {
+  if (!raw) {
+    return undefined;
+  }
+
+  return path.resolve(config.cwd, raw);
 }

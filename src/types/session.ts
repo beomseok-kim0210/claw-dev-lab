@@ -29,6 +29,7 @@ export type SessionClarification = {
 export type SessionSnapshot = {
   id: string;
   userRequest: string;
+  targetDirectory?: string;
   status: SessionStatus;
   createdAt: string;
   updatedAt: string;

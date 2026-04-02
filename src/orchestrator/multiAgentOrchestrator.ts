@@ -45,6 +45,8 @@ import { writeArtifacts, writeExecutionArtifacts } from "./outputWriter.js";
 type MultiAgentOrchestratorArgs = {
   client: OllamaClient;
   outputDir: string;
+  codeOutputDir?: string;
+  codePathPrefix?: string;
   hooks?: OrchestrationHooks;
 };
 
@@ -53,11 +55,15 @@ type DiscussionRole = Exclude<AgentRole, "pm">;
 export class MultiAgentOrchestrator {
   private readonly client: OllamaClient;
   private readonly outputDir: string;
+  private readonly codeOutputDir: string;
+  private readonly codePathPrefix: string;
   private readonly hooks: OrchestrationHooks | undefined;
 
   constructor(args: MultiAgentOrchestratorArgs) {
     this.client = args.client;
     this.outputDir = args.outputDir;
+    this.codeOutputDir = args.codeOutputDir ?? args.outputDir;
+    this.codePathPrefix = args.codePathPrefix ?? (args.codeOutputDir ? "" : "generated-app");
     this.hooks = args.hooks;
   }
 
@@ -212,7 +218,9 @@ export class MultiAgentOrchestrator {
     await this.emitPhase("implementation", "구현 실행 계획", "completed", "구현 순서와 완료 기준을 정리했습니다.");
 
     await this.emitPhase("coding", "코드 구현", "active", "에이전트가 실제 코드 파일을 생성하고, 이어서 상호 리뷰를 남기고 있습니다.");
-    await this.emitMessage(chat.addAgentMessage("pm", formatCodingKickoffMessage(implementationPlan)));
+    await this.emitMessage(
+      chat.addAgentMessage("pm", formatCodingKickoffMessage(implementationPlan, this.codeOutputDir)),
+    );
 
     const codingTaskMap = new Map(
       implementationPlan.tasks
@@ -220,6 +228,7 @@ export class MultiAgentOrchestrator {
         .map((task) => [task.owner, task] as const),
     );
     const codingOrder = discussionOrder.filter((role) => codingTaskMap.has(role));
+    const codeArtifacts: GeneratedArtifact[] = [];
 
     for (let index = 0; index < codingOrder.length; index += 1) {
       const owner = codingOrder[index];
@@ -236,6 +245,7 @@ export class MultiAgentOrchestrator {
         frontendSpec,
         aiFeaturesSpec,
         infraSpec,
+        codePathPrefix: this.codePathPrefix,
       });
       const targetFiles = pendingFiles.map((file) => file.filename);
 
@@ -255,12 +265,13 @@ export class MultiAgentOrchestrator {
       await this.emitMessage(updateMessage);
 
       const writtenCodeArtifacts = await writeArtifacts(
-        this.outputDir,
+        this.codeOutputDir,
         pendingFiles.map((file) => ({
           filename: file.filename,
           content: file.content,
         })),
       );
+      codeArtifacts.push(...writtenCodeArtifacts);
       artifacts = mergeArtifacts(artifacts, writtenCodeArtifacts);
       await this.hooks?.onArtifacts?.(artifacts);
 
@@ -278,7 +289,6 @@ export class MultiAgentOrchestrator {
       }
     }
 
-    const codeArtifacts = artifacts.filter((artifact) => artifact.filename.startsWith("generated-app/"));
     await this.emitMessage(chat.addAgentMessage("pm", formatCodingWrapUpMessage(codeArtifacts)));
     await this.emitPhase("coding", "코드 구현", "completed", "역할별 코드 생성과 상호 리뷰가 마무리되었습니다.");
 
@@ -402,10 +412,11 @@ export class MultiAgentOrchestrator {
   }
 }
 
-function formatCodingKickoffMessage(plan: ImplementationPlan): string {
+function formatCodingKickoffMessage(plan: ImplementationPlan, codeOutputDir: string): string {
   return [
     "제목: 구현 단계 시작",
     `구현 목표: ${plan.overview}`,
+    `코드 출력 경로: ${codeOutputDir}`,
     "작업 순서:",
     ...plan.tasks.map((task) => `- ${task.id} / ${task.owner} / ${task.title}`),
     "진행 방식:",
