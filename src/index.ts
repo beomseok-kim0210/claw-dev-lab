@@ -151,6 +151,13 @@ async function main(): Promise<void> {
           }
         : {}),
       hooks: {
+        onCodeActivity(update) {
+          if (update.currentFile) {
+            process.stdout.write(
+              `[파일 쓰기] ${update.owner} ${update.state === "completed" ? "완료" : "진행"} -> ${update.currentFile}\n`,
+            );
+          }
+        },
         async onClarificationRequest(plan) {
           process.stdout.write(`\n[추가 확인] ${plan.summary}\n`);
           const answers = [];

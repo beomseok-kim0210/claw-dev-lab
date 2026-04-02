@@ -1,6 +1,6 @@
 import type { ChatMessage } from "./chat.js";
 import type { ClarificationQuestion } from "./contracts.js";
-import type { ClarificationAnswer } from "./orchestration.js";
+import type { ClarificationAnswer, CodeActivityUpdate } from "./orchestration.js";
 import type { OrchestrationPhaseKey, OrchestrationPhaseState } from "./orchestration.js";
 
 export type SessionStatus = "queued" | "running" | "waiting_input" | "completed" | "failed";
@@ -26,6 +26,8 @@ export type SessionClarification = {
   state: "pending" | "answered";
 };
 
+export type SessionCodeActivity = CodeActivityUpdate;
+
 export type SessionSnapshot = {
   id: string;
   userRequest: string;
@@ -37,6 +39,7 @@ export type SessionSnapshot = {
   phases: SessionPhase[];
   artifacts: SessionArtifact[];
   clarification?: SessionClarification;
+  codeActivity?: SessionCodeActivity;
   error?: string;
 };
 
@@ -46,4 +49,5 @@ export type SessionEvent =
   | { type: "phase"; phase: SessionPhase }
   | { type: "artifacts"; artifacts: SessionArtifact[] }
   | { type: "clarification"; clarification?: SessionClarification }
+  | { type: "code_activity"; codeActivity?: SessionCodeActivity }
   | { type: "status"; status: SessionStatus; error?: string };

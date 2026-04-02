@@ -142,6 +142,9 @@ async function runSession(sessionId: string, userRequest: string, targetDirector
         onArtifacts(artifacts) {
           sessionStore.setArtifacts(sessionId, artifacts);
         },
+        onCodeActivity(update) {
+          sessionStore.setCodeActivity(sessionId, update);
+        },
         async onClarificationRequest(plan) {
           sessionStore.setStatus(sessionId, "waiting_input");
           const answers = await sessionStore.requestClarification(sessionId, plan);

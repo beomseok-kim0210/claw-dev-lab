@@ -34,6 +34,7 @@ import type {
 import type {
   ClarificationAnswer,
   ClarificationExchange,
+  CodeActivityUpdate,
   GeneratedArtifact,
   OrchestrationHooks,
   OrchestrationPhaseKey,
@@ -248,6 +249,15 @@ export class MultiAgentOrchestrator {
         codePathPrefix: this.codePathPrefix,
       });
       const targetFiles = pendingFiles.map((file) => file.filename);
+      await this.emitCodeActivity({
+        owner,
+        targetDirectory: this.codeOutputDir,
+        files: targetFiles,
+        writtenFiles: [],
+        currentFile: null,
+        state: "queued",
+        timestamp: new Date().toISOString(),
+      });
 
       const update = await runImplementationUpdate({
         client: this.client,
@@ -270,10 +280,23 @@ export class MultiAgentOrchestrator {
           filename: file.filename,
           content: file.content,
         })),
+        {
+          onArtifactWritten: async (artifact, writtenArtifacts) => {
+            artifacts = mergeArtifacts(artifacts, [artifact]);
+            await this.hooks?.onArtifacts?.(artifacts);
+            await this.emitCodeActivity({
+              owner,
+              targetDirectory: this.codeOutputDir,
+              files: targetFiles,
+              writtenFiles: writtenArtifacts.map((item) => item.filename),
+              currentFile: artifact.filename,
+              state: writtenArtifacts.length === targetFiles.length ? "completed" : "writing",
+              timestamp: new Date().toISOString(),
+            });
+          },
+        },
       );
       codeArtifacts.push(...writtenCodeArtifacts);
-      artifacts = mergeArtifacts(artifacts, writtenCodeArtifacts);
-      await this.hooks?.onArtifacts?.(artifacts);
 
       const reviewer = codingOrder.length > 1 ? codingOrder[(index + 1) % codingOrder.length] : undefined;
       if (reviewer && reviewer !== owner) {
@@ -394,6 +417,10 @@ export class MultiAgentOrchestrator {
 
   private async emitMessage(message: ChatMessage): Promise<void> {
     await this.hooks?.onMessage?.(message);
+  }
+
+  private async emitCodeActivity(update: CodeActivityUpdate): Promise<void> {
+    await this.hooks?.onCodeActivity?.(update);
   }
 
   private async emitPhase(

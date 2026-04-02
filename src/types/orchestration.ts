@@ -1,4 +1,4 @@
-import type { ArtifactFileName, ChatMessage } from "./chat.js";
+import type { AgentRole, ArtifactFileName, ChatMessage } from "./chat.js";
 import type {
   AIDiscussion,
   AIFeaturesSpec,
@@ -72,10 +72,21 @@ export type OrchestrationPhaseUpdate = {
   timestamp: string;
 };
 
+export type CodeActivityUpdate = {
+  owner: Exclude<AgentRole, "pm">;
+  targetDirectory: string;
+  files: string[];
+  writtenFiles: string[];
+  currentFile: string | null;
+  state: "queued" | "writing" | "completed";
+  timestamp: string;
+};
+
 export type OrchestrationHooks = {
   onMessage?: (message: ChatMessage) => void | Promise<void>;
   onPhase?: (phase: OrchestrationPhaseUpdate) => void | Promise<void>;
   onArtifacts?: (artifacts: GeneratedArtifact[]) => void | Promise<void>;
+  onCodeActivity?: (update: CodeActivityUpdate) => void | Promise<void>;
   onClarificationRequest?: (plan: ClarificationPlan) => Promise<ClarificationAnswer[]>;
 };
 

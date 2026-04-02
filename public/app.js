@@ -18,6 +18,10 @@ const targetDirectoryValue = document.getElementById("targetDirectoryValue");
 const healthChip = document.getElementById("healthChip");
 const modelChip = document.getElementById("modelChip");
 const phaseList = document.getElementById("phaseList");
+const codeActivityPanel = document.getElementById("codeActivityPanel");
+const codeActivityStatus = document.getElementById("codeActivityStatus");
+const codeActivityPath = document.getElementById("codeActivityPath");
+const codeActivityList = document.getElementById("codeActivityList");
 const clarificationPanel = document.getElementById("clarificationPanel");
 const clarificationSummary = document.getElementById("clarificationSummary");
 const clarificationForm = document.getElementById("clarificationForm");
@@ -72,6 +76,7 @@ submitButton.addEventListener("click", async () => {
 
 async function boot() {
   renderPhases([]);
+  renderCodeActivity(undefined);
   renderClarification(undefined, "queued");
   await loadHealth();
 }
@@ -136,6 +141,15 @@ function openSessionStream(sessionId) {
     applySnapshot(state.snapshot);
   });
 
+  eventSource.addEventListener("code_activity", (event) => {
+    const payload = JSON.parse(event.data);
+    state.snapshot.codeActivity = payload.codeActivity;
+    if (payload.codeActivity?.currentFile) {
+      state.activeArtifact = payload.codeActivity.currentFile;
+    }
+    applySnapshot(state.snapshot);
+  });
+
   eventSource.addEventListener("status", (event) => {
     const payload = JSON.parse(event.data);
     state.snapshot.status = payload.status;
@@ -170,6 +184,7 @@ function applySnapshot(snapshot) {
   sessionStatusValue.textContent = formatStatus(snapshot.status, snapshot.error);
   targetDirectoryValue.textContent = snapshot.targetDirectory ?? "세션 출력 폴더 사용";
   renderPhases(snapshot.phases);
+  renderCodeActivity(snapshot.codeActivity);
   renderClarification(snapshot.clarification, snapshot.status);
   renderTranscript(snapshot.transcript);
   renderDecision(snapshot.transcript, snapshot.error);
@@ -220,6 +235,45 @@ function renderPhases(phases) {
     content.append(title, detail);
     li.append(dot, content);
     phaseList.append(li);
+  }
+}
+
+function renderCodeActivity(codeActivity) {
+  codeActivityList.innerHTML = "";
+
+  if (!codeActivity) {
+    codeActivityPanel.classList.add("inactive");
+    codeActivityStatus.textContent = "코드 단계가 시작되면 여기에 표시됩니다.";
+    codeActivityPath.textContent = "타깃 폴더를 VS Code로 열어두면 저장 결과가 바로 보입니다.";
+    return;
+  }
+
+  codeActivityPanel.classList.remove("inactive");
+  const stateLabel =
+    codeActivity.state === "queued"
+      ? "준비 중"
+      : codeActivity.state === "writing"
+        ? "파일 쓰는 중"
+        : "역할 배치 완료";
+  codeActivityStatus.textContent = `${roleLabel(codeActivity.owner)} · ${stateLabel}`;
+  codeActivityPath.textContent = codeActivity.targetDirectory;
+
+  for (const file of codeActivity.files) {
+    const item = document.createElement("li");
+    const isCurrent = codeActivity.currentFile === file;
+    const isWritten = codeActivity.writtenFiles.includes(file);
+    item.className = `code-activity-item${isCurrent ? " current" : ""}${isWritten ? " written" : ""}`;
+
+    const name = document.createElement("span");
+    name.className = "code-activity-file";
+    name.textContent = file;
+
+    const badge = document.createElement("span");
+    badge.className = "code-activity-badge";
+    badge.textContent = isCurrent ? "writing" : isWritten ? "written" : "queued";
+
+    item.append(name, badge);
+    codeActivityList.append(item);
   }
 }
 
@@ -619,6 +673,7 @@ function resetSessionView() {
   sessionStatusValue.textContent = "대기 중";
   targetDirectoryValue.textContent = targetDirectoryInput.value.trim() || "세션 출력 폴더 사용";
   renderPhases(defaultPhases());
+  renderCodeActivity(undefined);
   renderClarification(undefined, "queued");
   renderTranscript([]);
   renderArtifacts([]);

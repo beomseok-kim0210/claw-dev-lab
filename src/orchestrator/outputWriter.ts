@@ -16,6 +16,10 @@ type ArtifactInput = {
   content: string;
 };
 
+type WriteArtifactsOptions = {
+  onArtifactWritten?: (artifact: GeneratedArtifact, writtenArtifacts: GeneratedArtifact[]) => void | Promise<void>;
+};
+
 export async function writeExecutionArtifacts(args: {
   outputDir: string;
   finalDecision: PMFinalDecision;
@@ -49,7 +53,11 @@ export async function writeExecutionArtifacts(args: {
   ]);
 }
 
-export async function writeArtifacts(outputDir: string, artifacts: ArtifactInput[]): Promise<GeneratedArtifact[]> {
+export async function writeArtifacts(
+  outputDir: string,
+  artifacts: ArtifactInput[],
+  options?: WriteArtifactsOptions,
+): Promise<GeneratedArtifact[]> {
   const writtenArtifacts: GeneratedArtifact[] = [];
 
   for (const artifact of artifacts) {
@@ -61,6 +69,10 @@ export async function writeArtifacts(outputDir: string, artifacts: ArtifactInput
       absolutePath,
       content: artifact.content,
     });
+    const writtenArtifact = writtenArtifacts[writtenArtifacts.length - 1];
+    if (writtenArtifact) {
+      await options?.onArtifactWritten?.(writtenArtifact, [...writtenArtifacts]);
+    }
   }
 
   return writtenArtifacts;

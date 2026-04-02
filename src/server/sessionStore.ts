@@ -4,6 +4,7 @@ import type { ChatMessage } from "../types/chat.js";
 import type { ClarificationPlan } from "../types/contracts.js";
 import type {
   ClarificationAnswer,
+  CodeActivityUpdate,
   GeneratedArtifact,
   OrchestrationPhaseKey,
   OrchestrationPhaseUpdate,
@@ -11,6 +12,7 @@ import type {
 import type {
   SessionArtifact,
   SessionClarification,
+  SessionCodeActivity,
   SessionEvent,
   SessionPhase,
   SessionSnapshot,
@@ -170,6 +172,17 @@ export class SessionStore {
     });
   }
 
+  setCodeActivity(id: string, update: CodeActivityUpdate): void {
+    const record = this.requireRecord(id);
+    record.snapshot.codeActivity = { ...update };
+    record.snapshot.updatedAt = new Date().toISOString();
+
+    this.emit(id, {
+      type: "code_activity",
+      codeActivity: this.cloneCodeActivity(record.snapshot.codeActivity),
+    });
+  }
+
   getArtifact(id: string, filename: string): SessionArtifact | undefined {
     const record = this.sessions.get(id);
     return record?.snapshot.artifacts.find((artifact) => artifact.filename === filename);
@@ -246,6 +259,7 @@ export class SessionStore {
       phases: snapshot.phases.map((phase) => ({ ...phase })),
       artifacts: snapshot.artifacts.map((artifact) => ({ ...artifact })),
       ...(snapshot.clarification ? { clarification: this.cloneClarification(snapshot.clarification) } : {}),
+      ...(snapshot.codeActivity ? { codeActivity: this.cloneCodeActivity(snapshot.codeActivity) } : {}),
     };
   }
 
@@ -254,6 +268,14 @@ export class SessionStore {
       ...clarification,
       questions: clarification.questions.map((question) => ({ ...question })),
       answers: clarification.answers.map((answer) => ({ ...answer })),
+    };
+  }
+
+  private cloneCodeActivity(codeActivity: SessionCodeActivity): SessionCodeActivity {
+    return {
+      ...codeActivity,
+      files: codeActivity.files.map((item) => item),
+      writtenFiles: codeActivity.writtenFiles.map((item) => item),
     };
   }
 }
