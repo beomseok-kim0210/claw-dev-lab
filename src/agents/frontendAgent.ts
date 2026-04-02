@@ -38,6 +38,11 @@ export function formatFrontendDiscussion(discussion: FrontendDiscussion): string
   return [
     `제목: ${discussion.headline}`,
     `요약: ${discussion.summary}`,
+    `핵심 주장: ${discussion.claim}`,
+    "주장 근거:",
+    ...discussion.support.map((item) => `- ${item}`),
+    `반박 대상: ${discussion.rebuttalTarget}`,
+    `반박: ${discussion.rebuttal}`,
     "화면 구성:",
     ...discussion.screens.map((item) => `- ${item}`),
     "컴포넌트 구성:",

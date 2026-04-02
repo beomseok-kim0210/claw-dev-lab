@@ -38,7 +38,12 @@ export function formatBackendDiscussion(discussion: BackendDiscussion): string {
   return [
     `제목: ${discussion.headline}`,
     `요약: ${discussion.summary}`,
-    "API 설계:",
+    `핵심 주장: ${discussion.claim}`,
+    "주장 근거:",
+    ...discussion.support.map((item) => `- ${item}`),
+    `반박 대상: ${discussion.rebuttalTarget}`,
+    `반박: ${discussion.rebuttal}`,
+    "백엔드 제안:",
     ...discussion.apiDesign.map((item) => `- ${item}`),
     "데이터 모델:",
     ...discussion.dataModel.map((item) => `- ${item}`),

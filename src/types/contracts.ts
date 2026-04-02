@@ -3,7 +3,7 @@ import { z } from "zod";
 const messageReferenceSchema = z.string().regex(/^msg-\d{3}$/);
 const shortBulletListSchema = z.array(z.string().min(1)).min(2).max(5);
 const mediumBulletListSchema = z.array(z.string().min(1)).min(3).max(6);
-const referenceListSchema = z.array(messageReferenceSchema).min(1).max(4);
+const referenceListSchema = z.array(messageReferenceSchema).min(1).max(5);
 
 export const pmInitialDiscussionSchema = z
   .object({
@@ -15,35 +15,50 @@ export const pmInitialDiscussionSchema = z
   })
   .strict();
 
-export const backendDiscussionSchema = z
+const agentDiscussionBaseSchema = z
   .object({
     headline: z.string().min(1),
     summary: z.string().min(1),
+    claim: z.string().min(1),
+    support: shortBulletListSchema,
+    rebuttalTarget: z.union([messageReferenceSchema, z.literal("없음")]),
+    rebuttal: z.string().min(1),
+    references: referenceListSchema,
+  })
+  .strict();
+
+export const backendDiscussionSchema = agentDiscussionBaseSchema
+  .extend({
     apiDesign: mediumBulletListSchema,
     dataModel: shortBulletListSchema,
     constraints: shortBulletListSchema,
-    references: referenceListSchema,
   })
   .strict();
 
-export const frontendDiscussionSchema = z
-  .object({
-    headline: z.string().min(1),
-    summary: z.string().min(1),
+export const frontendDiscussionSchema = agentDiscussionBaseSchema
+  .extend({
     screens: mediumBulletListSchema,
     components: mediumBulletListSchema,
     usabilityNotes: shortBulletListSchema,
-    references: referenceListSchema,
   })
   .strict();
 
-export const aiDiscussionSchema = z
-  .object({
-    headline: z.string().min(1),
-    summary: z.string().min(1),
+export const aiDiscussionSchema = agentDiscussionBaseSchema
+  .extend({
     aiFeatures: mediumBulletListSchema,
     feasibility: shortBulletListSchema,
     risks: shortBulletListSchema,
+  })
+  .strict();
+
+export const agentReactionSchema = z
+  .object({
+    headline: z.string().min(1),
+    reactionType: z.enum(["challenge", "support", "refine"]),
+    targetMessageId: messageReferenceSchema,
+    position: z.string().min(1),
+    reaction: z.string().min(1),
+    adjustment: z.string().min(1),
     references: referenceListSchema,
   })
   .strict();
@@ -126,6 +141,7 @@ export type PMInitialDiscussion = z.infer<typeof pmInitialDiscussionSchema>;
 export type BackendDiscussion = z.infer<typeof backendDiscussionSchema>;
 export type FrontendDiscussion = z.infer<typeof frontendDiscussionSchema>;
 export type AIDiscussion = z.infer<typeof aiDiscussionSchema>;
+export type AgentReaction = z.infer<typeof agentReactionSchema>;
 export type PMFinalDecision = z.infer<typeof pmFinalDecisionSchema>;
 export type BackendSpec = z.infer<typeof backendSpecSchema>;
 export type FrontendSpec = z.infer<typeof frontendSpecSchema>;

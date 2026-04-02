@@ -1,602 +1,283 @@
-# Claw Dev
+# Claw Dev Multi-Agent Collaboration System
 
-Claw Dev is a local multi-provider coding assistant launcher for the bundled terminal client in this repository. It gives you one entry point and lets you choose how model requests are resolved at startup:
+이 저장소는 두 가지를 함께 포함합니다.
 
-- Anthropic account login or `ANTHROPIC_API_KEY`
-- OpenAI through a local Anthropic-compatible proxy
-- Google Gemini through a local Anthropic-compatible proxy
-- Groq through a local Anthropic-compatible proxy
-- Copilot through the GitHub Models API
-- z.ai through a local Anthropic-compatible proxy
-- Ollama through a local Anthropic-compatible proxy
+- `Claw Dev` 런처 및 Anthropic 호환 프록시
+- `qwen3` 기반 멀티 에이전트 협업 시스템
 
-Claw Dev is designed to feel like one tool rather than a provider-specific wrapper. The launcher, provider prompts, environment variables, and documentation are all centered around the `Claw Dev` name.
+현재 핵심은 두 번째입니다.  
+사용자 요청을 받으면 PM, 백엔드, 프론트엔드, AI 전문가가 하나의 공유 채팅방에서 토론하고, PM이 최종 MVP를 결정한 뒤 명세 문서와 구현 실행 계획을 생성합니다.
 
-## Repository Layout
+## 핵심 특징
 
-- `Leonxlnx-claude-code/`
-  - bundled terminal client and platform launchers
-- `src/anthropicCompatProxy.ts`
-  - local Anthropic-compatible proxy used for OpenAI, Gemini, Groq, Ollama, Copilot, and z.ai
-- `.env.example`
-  - optional environment template for local setup
-- `package.json`
-  - root scripts for launching, building, and validating the workspace
+- 단일 LLM만 사용
+  - Ollama `qwen3`
+- 멀티 에이전트는 별도 서비스가 아니라 역할 프롬프트로 시뮬레이션
+- 웹 UI에서 실시간 채팅방 확인 가능
+- PM 시작, 중간 자유 토론, PM 최종 결정 구조
+- 중간 토론에서 주장, 반박 대상, 반박, 보완 제안이 모두 표시됨
+- 토론 후 아래 산출물 생성
+  - `backend-spec.md`
+  - `frontend-spec.md`
+  - `ai-features.md`
+  - `implementation-plan.md`
+- 구현 실행 계획은 LLM 출력이 흔들릴 경우 deterministic fallback으로 안정적으로 생성
 
-## Supported Providers
+## 현재 대화 흐름
 
-### Anthropic
+지금 시스템은 고정 순서 1회 발언 구조가 아닙니다.
 
-Use the bundled client with the normal Anthropic login flow or with `ANTHROPIC_API_KEY`.
+1. 사용자 요청 등록
+2. PM이 문제 정의와 MVP 기준선 제시
+3. 백엔드, 프론트엔드, AI가 동적 순서로 초기 주장 발언
+4. 세 에이전트가 서로의 특정 메시지에 대해 지지, 반박, 보완 응답
+5. PM이 전체 토론을 정리하고 최종 결정
+6. 명세 문서 생성
+7. 구현 실행 계획 생성
 
-### OpenAI
+즉, 질서는 유지하지만 중간은 더 자연스러운 자유 토론처럼 동작합니다.
 
-Use an OpenAI API key and route requests through the local compatibility proxy.
+## 웹에서 볼 수 있는 것
 
-### Gemini
+브라우저 UI에서 바로 확인할 수 있습니다.
 
-Use a Google Gemini API key and route requests through the local compatibility proxy.
+- 세션 상태
+- 단계 진행 상황
+- 실시간 채팅 메시지
+- 각 메시지의 핵심 주장
+- 어떤 메시지를 반박하는지
+- 보완 제안 내용
+- PM 최종 결정
+- 생성된 markdown 산출물 다운로드
 
-### Groq
+기본 주소:
 
-Use a Groq API key and route requests through the local compatibility proxy.
+```text
+http://127.0.0.1:3030
+```
 
-### Ollama
+## 실행 방법
 
-Use a local or remote Ollama server and route requests through the local compatibility proxy.
-
-This is the best option if you want local inference and do not want to depend on a cloud API provider.
-
-### Copilot
-
-Use a GitHub Models-compatible bearer token and route requests through the local compatibility proxy.
-
-### z.ai
-
-Use a z.ai API key and route requests through the local compatibility proxy.
-
-## Requirements
-
-Install the following before you begin:
-
-- Node.js 22 or newer
-- npm
-- Windows users should install Git for Windows for the best terminal workflow
-
-Provider-specific requirements:
-
-- Anthropic
-  - an Anthropic account for in-app login, or `ANTHROPIC_API_KEY`
-- OpenAI
-  - `OPENAI_API_KEY`
-- Gemini
-  - `GEMINI_API_KEY`
-- Groq
-  - `GROQ_API_KEY`
-- Ollama
-  - a running Ollama installation
-  - at least one pulled model, such as `qwen3`
-- Copilot
-  - `COPILOT_TOKEN` or another GitHub Models-compatible bearer token
-- z.ai
-  - `ZAI_API_KEY`
-
-## System Requirements
-
-### Minimum project requirements
-
-These requirements apply to Claw Dev itself:
-
-- Node.js 22+
-- enough free disk space for Node dependencies and any local model assets you choose to install
-- one of the following shells:
-  - Windows PowerShell or Command Prompt
-  - macOS Terminal, iTerm2, `bash`, or `zsh`
-  - Linux terminal with `bash` or `zsh`
-
-### Ollama platform notes
-
-According to the official Ollama documentation:
-
-- Ollama is available for Windows, macOS, and Linux
-- the local Ollama API is served by default at `http://localhost:11434/api`
-- no authentication is required for local API access on `http://localhost:11434`
-- on Windows, Ollama reads standard user and system environment variables
-
-### Ollama hardware guidance
-
-Official Ollama documentation explains that loaded models may run fully on GPU, fully in system memory, or split across CPU and GPU, and that actual memory use depends on the model you choose. The exact hardware requirement therefore depends primarily on model size.
-
-Practical guidance for Claw Dev users:
-
-- For small local coding models, 16 GB system RAM is a reasonable starting point
-- For smoother local work, 32 GB RAM is strongly preferred
-- A dedicated GPU helps significantly, especially for larger models and faster response times
-- If you do not have a capable GPU, Ollama can still run on CPU, but generation will be slower
-- Larger models require substantially more RAM or VRAM and may be impractical on entry-level hardware
-
-Conservative model guidance:
-
-- `qwen3` or similar 8B-class models are the easiest place to start on consumer hardware
-- mid-size models usually benefit from 16 GB to 24 GB of available VRAM, or enough combined GPU and system memory for mixed CPU/GPU loading
-- very large models are generally not a practical default for local coding workflows unless you already have a high-memory workstation
-
-This guidance is an implementation recommendation based on Ollama's documented runtime behavior and common model sizes. It is not an official Ollama sizing table.
-
-## Installation
-
-From the repository root on Windows:
+### 1. 의존성 설치
 
 ```powershell
-cd E:\myclaudecode
 npm install
-copy .env.example .env
 ```
 
-From the repository root on macOS or Linux:
-
-```bash
-cd /path/to/myclaudecode
-npm install
-cp .env.example .env
-```
-
-Editing `.env` is optional. Claw Dev can prompt for missing values interactively when it starts.
-
-## Quick Start
-
-Start Claw Dev from the repository root on any platform:
-
-```bash
-npm run claw-dev
-```
-
-Or launch it directly from the bundled client directory on Windows:
-
-```powershell
-cd E:\myclaudecode\Leonxlnx-claude-code
-.\claw-dev.cmd
-```
-
-Or launch it directly from the bundled client directory on macOS or Linux:
-
-```bash
-cd /path/to/myclaudecode/Leonxlnx-claude-code
-chmod +x ./claw-dev.sh
-./claw-dev.sh
-```
-
-When Claw Dev starts, it shows a provider selector:
-
-1. Anthropic
-2. OpenAI
-3. Gemini
-4. Groq
-5. Copilot
-6. z.ai
-7. Ollama
-
-If a required API key is missing, Claw Dev prompts for it.
-
-After you choose a provider, Claw Dev also lets you enter any model id you want for that session. You can press Enter to keep the suggested default, or type a custom model id such as:
-
-- `gpt-4.1`
-- `gpt-4o-mini`
-- `gemini-2.5-pro`
-- `openai/gpt-oss-120b`
-- `openai/o4-mini`
-- `qwen2.5-coder:14b`
-
-This makes model selection flexible even when the bundled in-app `/model` picker still shows provider-specific legacy labels.
-
-## Additional Cloud Provider Setup
-
-### Copilot
-
-Recommended `.env` values:
-
-```env
-COPILOT_TOKEN=your_github_models_token_here
-COPILOT_MODEL=openai/gpt-4.1-mini
-COPILOT_MODEL_SONNET=openai/gpt-4.1-mini
-COPILOT_MODEL_OPUS=openai/gpt-4.1
-COPILOT_MODEL_HAIKU=openai/gpt-4.1-mini
-```
-
-### z.ai
-
-Recommended `.env` values:
-
-```env
-ZAI_API_KEY=your_zai_api_key_here
-ZAI_MODEL=glm-5
-```
-
-### OpenAI
-
-Recommended `.env` values:
-
-```env
-OPENAI_API_KEY=your_openai_api_key_here
-OPENAI_MODEL=gpt-4.1-mini
-```
-
-## How To Use Ollama With Claw Dev
-
-### 1. Install Ollama
-
-Install Ollama from the official download page:
-
-- [Ollama Downloads](https://ollama.com/download)
-
-After installation, make sure the Ollama application or service is running.
-
-### 2. Pull a local model
-
-For a lightweight starting point:
+### 2. Ollama 준비
 
 ```powershell
 ollama pull qwen3
-```
-
-You can verify that the model is available with:
-
-```powershell
-ollama list
-```
-
-### 3. Start the Ollama server
-
-If Ollama is not already running in the background, start it with:
-
-```powershell
 ollama serve
 ```
 
-The default local API base URL is:
+기본 Ollama 주소:
 
 ```text
 http://127.0.0.1:11434
 ```
 
-### 4. Start Claw Dev and choose Ollama
+### 3. 웹 서버 실행
 
 ```powershell
-cd E:\myclaudecode
-npm run claw-dev
+npm run web
 ```
 
-Then choose:
+그다음 브라우저에서:
 
 ```text
-4. Ollama
+http://127.0.0.1:3030
 ```
 
-Claw Dev will point the bundled client at the local compatibility proxy, and the proxy will forward requests to your Ollama server.
-
-### 5. Optional environment configuration
-
-You can preconfigure Ollama mode in `.env`:
-
-```env
-OLLAMA_BASE_URL=http://127.0.0.1:11434
-OLLAMA_MODEL=qwen3
-OLLAMA_API_KEY=
-OLLAMA_KEEP_ALIVE=30m
-OLLAMA_NUM_CTX=2048
-OLLAMA_NUM_PREDICT=128
-```
-
-Notes:
-
-- `OLLAMA_BASE_URL` should point to your Ollama server
-- `OLLAMA_MODEL` is the model name Claw Dev will request
-- `OLLAMA_API_KEY` is not required for local Ollama on `localhost`
-- `OLLAMA_API_KEY` is only relevant if you are targeting an authenticated remote Ollama endpoint or the hosted Ollama API
-- `OLLAMA_KEEP_ALIVE` keeps the model loaded between turns, which reduces repeated warm-up time
-- `OLLAMA_NUM_CTX` controls prompt context size
-- `OLLAMA_NUM_PREDICT` limits output length and can reduce latency
-
-### 6. Check that Ollama is really being used
-
-Useful checks:
+### 4. CLI 예시 실행
 
 ```powershell
-ollama ps
+npm run dev -- --example
 ```
 
-This shows which models are currently loaded and whether they are using CPU, GPU, or both.
-
-You can also confirm that the Claw Dev proxy is healthy:
+직접 요청을 넣고 싶으면:
 
 ```powershell
-npm run proxy:compat
+npm run dev -- "PRD를 업로드하면 멀티 에이전트가 토론하고 구현 계획까지 만드는 워크스페이스를 설계해줘"
 ```
 
-Then open:
-
-```text
-http://127.0.0.1:8789/health
-```
-
-When Ollama mode is configured, you should see a JSON response with the active provider and model.
-
-### 7. Ollama performance tuning
-
-If Ollama feels slow, start with the following assumptions:
-
-- larger context windows are slower
-- longer outputs are slower
-- first-token latency is usually worst on the first request after model load
-- CPU-only inference is much slower than GPU-backed inference
-
-Recommended starting values for a responsive local setup:
-
-```env
-OLLAMA_KEEP_ALIVE=30m
-OLLAMA_NUM_CTX=2048
-OLLAMA_NUM_PREDICT=128
-```
-
-If you need more quality and longer context, increase `OLLAMA_NUM_CTX` gradually to `4096` or higher. If you want faster responses, keep it smaller.
-
-If you need shorter answers and lower latency, reduce `OLLAMA_NUM_PREDICT` further.
-
-## Recommended Environment Variables
-
-### Anthropic
-
-```env
-ANTHROPIC_API_KEY=your_anthropic_api_key_here
-ANTHROPIC_MODEL=claude-sonnet-4-20250514
-```
-
-### OpenAI
-
-```env
-OPENAI_API_KEY=your_openai_api_key_here
-OPENAI_MODEL=gpt-4.1-mini
-```
-
-### Gemini
-
-```env
-GEMINI_API_KEY=your_gemini_api_key_here
-GEMINI_MODEL=gemini-2.5-flash
-```
-
-### Groq
-
-```env
-GROQ_API_KEY=your_groq_api_key_here
-GROQ_MODEL=openai/gpt-oss-20b
-```
-
-### Ollama
-
-```env
-OLLAMA_BASE_URL=http://127.0.0.1:11434
-OLLAMA_MODEL=qwen3
-OLLAMA_API_KEY=
-OLLAMA_KEEP_ALIVE=30m
-OLLAMA_NUM_CTX=2048
-OLLAMA_NUM_PREDICT=128
-```
-
-### Copilot
-
-```env
-COPILOT_TOKEN=your_github_models_token_here
-COPILOT_MODEL=openai/gpt-4.1-mini
-COPILOT_MODEL_SONNET=openai/gpt-4.1-mini
-COPILOT_MODEL_OPUS=openai/gpt-4.1
-COPILOT_MODEL_HAIKU=openai/gpt-4.1-mini
-```
-
-### z.ai
-
-```env
-ZAI_API_KEY=your_zai_api_key_here
-ZAI_MODEL=glm-5
-```
-
-## Useful Commands
-
-Check the installed launcher version:
-
-```powershell
-cd E:\myclaudecode\Leonxlnx-claude-code
-.\claw-dev.cmd --version
-```
-
-Check the installed launcher version on macOS or Linux:
-
-```bash
-cd /path/to/myclaudecode/Leonxlnx-claude-code
-chmod +x ./claw-dev.sh
-./claw-dev.sh --version
-```
-
-Skip the provider menu and force a specific provider:
-
-```powershell
-.\claw-dev.cmd --provider anthropic
-.\\claw-dev.cmd --provider openai
-.\claw-dev.cmd --provider gemini
-.\claw-dev.cmd --provider groq
-.\claw-dev.cmd --provider copilot
-.\claw-dev.cmd --provider zai
-.\claw-dev.cmd --provider ollama
-```
-
-You can also skip the default model prompt and force any model id directly:
-
-```powershell
-.\claw-dev.cmd --provider openai --model gpt-4.1
-.\claw-dev.cmd --provider gemini --model gemini-2.5-pro
-.\claw-dev.cmd --provider groq --model openai/gpt-oss-120b
-.\claw-dev.cmd --provider copilot --model openai/o4-mini
-.\claw-dev.cmd --provider zai --model glm-4.5
-.\claw-dev.cmd --provider ollama --model qwen2.5-coder:14b
-```
-
-Equivalent macOS or Linux examples:
-
-```bash
-./claw-dev.sh --provider openai --model gpt-4.1
-./claw-dev.sh --provider ollama --model qwen2.5-coder:14b
-```
-
-If you want extra suggestions to appear in the proxy model catalog, you can define optional comma-separated model lists:
-
-```env
-OPENAI_MODELS=gpt-4.1-mini,gpt-4.1,gpt-4o-mini,gpt-4o,o4-mini
-GEMINI_MODELS=gemini-2.5-flash,gemini-2.5-pro,gemma-3-27b-it
-GROQ_MODELS=openai/gpt-oss-20b,openai/gpt-oss-120b,qwen/qwen3-32b
-COPILOT_MODELS=openai/gpt-4.1-mini,openai/gpt-4.1,openai/gpt-4o,openai/o4-mini
-ZAI_MODELS=glm-5,glm-4.5,glm-4.5-air
-OLLAMA_MODELS=qwen3,qwen2.5-coder:7b,qwen2.5-coder:14b,deepseek-r1:8b
-```
-
-Important note:
-
-- the startup model override accepts any model id
-- the bundled `/model` command inside the client is still based on the bundled UI, so its labels may not match your provider exactly
-- Claw Dev uses your startup model choice as the real backend model for the session
-
-Legacy aliases are still accepted:
-
-```powershell
-.\claw-dev.cmd --provider claude
-.\claw-dev.cmd --provider grok
-```
-
-Run a one-shot prompt:
-
-```powershell
-echo "Summarize this repository" | .\claw-dev.cmd --bare -p
-```
-
-## Git Privacy Before Publishing
-
-Before creating public commits, verify that your local Git identity is safe to publish.
-
-Recommended settings for this repository:
-
-```powershell
-git config user.name "Leonxlnx"
-git config user.email "219127460+Leonxlnx@users.noreply.github.com"
-```
-
-You can verify the active values with:
-
-```powershell
-git config user.name
-git config user.email
-```
-
-Important notes:
-
-- `.env` is ignored by `.gitignore`
-- `node_modules` is ignored
-- `dist` is ignored
-- `*.log` files are ignored
-- always review `git status` before staging
-- always review `git diff --cached` before pushing
-
-Useful checks:
-
-```powershell
-git status --short
-git diff --cached
-```
-
-## Architecture Overview
-
-Claw Dev works in two modes:
-
-- Anthropic mode
-  - the bundled client talks to Anthropic directly
-- Compatibility mode
-  - the bundled client talks to the local proxy
-  - the local proxy translates Anthropic-style `/v1/messages` requests into OpenAI, Gemini, Groq, Ollama, Copilot, or z.ai API calls
-
-This keeps the terminal experience consistent while allowing different model backends.
-
-## Troubleshooting
-
-### Ollama does not answer
-
-Check the following:
-
-- Ollama is installed
-- the Ollama service or background app is running
-- `ollama serve` is active if needed
-- the selected model was pulled successfully
-- `OLLAMA_BASE_URL` points to the correct server
-
-### Ollama answers slowly
-
-Common causes:
-
-- the model is running on CPU instead of GPU
-- the selected model is too large for your hardware
-- the model is partly swapping between GPU and system memory
-- the context window is too large for your use case
-- the requested answer is longer than necessary
-
-Use:
-
-```powershell
-ollama ps
-```
-
-to inspect how the model is loaded.
-
-If `PROCESSOR` shows `100% CPU`, slow generation is expected.
-
-Recommended fixes:
-
-- keep `OLLAMA_NUM_CTX` at `2048` first
-- keep `OLLAMA_NUM_PREDICT` low for short answers
-- leave `OLLAMA_KEEP_ALIVE=30m` or longer so the model stays warm
-- try a smaller model if local responsiveness matters more than maximum quality
-
-### Cloud providers work, but Ollama does not
-
-That usually means Claw Dev is working correctly, but the local Ollama server is not reachable or does not have the requested model.
-
-## Sharing With Another User
-
-If you hand this repository to someone else, the shortest setup path is:
-
-1. Install Node.js 22 or newer
-2. Run `npm install`
-3. Start `npm run claw-dev`
-4. Choose a provider
-5. Supply credentials or run Ollama locally
-
-They do not need a separate global installation of the bundled client in order to use this repository.
-
-## Verification
-
-Useful checks:
+## 자주 쓰는 명령어
 
 ```powershell
 npm run check
 npm run build
-npm run claw-dev -- --version
+npm run web
+npm run dev -- --example
+npm run claw-dev
 ```
 
-## References
+설명:
 
-Official documentation used for this setup:
+- `npm run check`
+  - TypeScript 타입 검사
+- `npm run build`
+  - 프로젝트 빌드
+- `npm run web`
+  - 멀티 에이전트 웹 서버 실행
+- `npm run dev`
+  - CLI 기반 멀티 에이전트 실행
+- `npm run claw-dev`
+  - 기존 Claw Dev 런처 실행
 
-- [Ollama Documentation](https://docs.ollama.com/)
-- [Ollama API Introduction](https://docs.ollama.com/api/introduction)
-- [Ollama API Authentication](https://docs.ollama.com/api/authentication)
-- [Ollama FAQ](https://docs.ollama.com/faq)
-- [Anthropic Claude Code Quickstart](https://code.claude.com/docs/en/quickstart)
-- [OpenAI Chat Completions](https://platform.openai.com/docs/api-reference/chat/create)
-- [Groq Docs](https://console.groq.com/docs)
-- [GitHub Models API announcement](https://github.blog/changelog/2025-05-15-github-models-api-now-available)
+## 산출물 설명
+
+### `backend-spec.md`
+
+- API 설계
+- 데이터 모델
+- 기술 제약
+- 구현 단계
+- 예시 코드
+
+### `frontend-spec.md`
+
+- 화면 구성
+- 컴포넌트 구조
+- 사용성 체크리스트
+- 구현 단계
+- 예시 코드
+
+### `ai-features.md`
+
+- AI 기능 목록
+- 실현 가능성 메모
+- 가드레일
+- 구현 단계
+- 예시 코드
+
+### `implementation-plan.md`
+
+- 전체 구현 전략
+- 마일스톤
+- 역할별 작업
+- 각 작업의 산출물
+- 완료 기준
+- 구현 에이전트 시작 지시문
+
+## 아키텍처
+
+### 서버
+
+- `src/server.ts`
+  - HTTP 서버
+  - 세션 생성 API
+  - SSE 이벤트 스트림
+  - 산출물 다운로드
+- `src/server/sessionStore.ts`
+  - 메모리 기반 세션 저장소
+
+### 오케스트레이터
+
+- `src/orchestrator/multiAgentOrchestrator.ts`
+  - 전체 토론 흐름 제어
+  - PM 시작 / 자유 토론 / PM 종료 / 산출물 생성
+- `src/orchestrator/chatState.ts`
+  - 채팅 메시지 누적
+- `src/orchestrator/outputWriter.ts`
+  - markdown 산출물 생성
+
+### 에이전트
+
+- `src/agents/pmAgent.ts`
+- `src/agents/backendAgent.ts`
+- `src/agents/frontendAgent.ts`
+- `src/agents/aiAgent.ts`
+- `src/agents/reactionAgent.ts`
+- `src/agents/implementationPlanner.ts`
+
+### 프롬프트
+
+- `src/prompts/pm.ts`
+- `src/prompts/backend.ts`
+- `src/prompts/frontend.ts`
+- `src/prompts/ai.ts`
+- `src/prompts/reaction.ts`
+- `src/prompts/implementation.ts`
+
+### 하네스
+
+- `src/harness/promptHarness.ts`
+
+역할별 프롬프트를 공통 하네스로 묶습니다.
+
+- `discussion`
+  - 주장과 반박 중심 토론
+- `artifact`
+  - 역할별 명세 산출
+- `implementation`
+  - 실제 구현 실행 계획 생성
+
+## 프로젝트 구조
+
+```text
+src/
+  agents/
+  harness/
+  llm/
+  orchestrator/
+  prompts/
+  server/
+  types/
+public/
+Leonxlnx-claude-code/
+```
+
+## 환경 변수
+
+주요 값:
+
+```env
+OLLAMA_BASE_URL=http://127.0.0.1:11434
+OLLAMA_MODEL=qwen3
+MULTI_AGENT_PORT=3030
+AGENT_OUTPUT_DIR=.multi-agent-output
+```
+
+## 구현 상태
+
+현재 완료:
+
+- 한국어 웹 UI
+- 실시간 채팅방
+- PM 시작 / 자유 토론 / PM 마무리
+- 주장/반박/보완 메시지 표시
+- 역할별 명세 생성
+- 구현 실행 계획 생성
+- 하네스 프롬프팅 구조화
+
+아직 남은 것:
+
+- `implementation-plan.md`를 받아 실제 파일 수정까지 자동 수행하는 코드 실행 에이전트
+- 웹 UI의 `구현 시작` 버튼
+- 실제 코드베이스 연결 시 파일 단위 작업 분배
+
+## 검증
+
+기본 검증:
+
+```powershell
+npm run check
+npm run dev -- --example
+```
+
+웹 서버 확인:
+
+```text
+http://127.0.0.1:3030/api/health
+```
+
+정상 응답 예:
+
+```json
+{"ok":true,"model":"qwen3","baseUrl":"http://127.0.0.1:11434"}
+```
+
+## 참고
+
+이 저장소에는 기존 `Claw Dev` 런처도 그대로 포함되어 있습니다.  
+다만 현재 README는 멀티 에이전트 협업 시스템 기준으로 정리되어 있습니다.

@@ -16,7 +16,7 @@
   <header class="topbar shell">
     <div>
       <p class="eyebrow">멀티 에이전트 협업 시스템</p>
-      <h1>에이전트와 함께 기획하고, 합의가 끝나면 구현 산출물까지 이어집니다.</h1>
+      <h1>PM이 시작하고, 중간은 자유 토론으로 풀고, 마지막은 PM이 결정합니다.</h1>
     </div>
     <div class="server-meta">
       <div class="status-chip" id="healthChip">Ollama 확인 중...</div>
@@ -31,8 +31,8 @@
         <h2>공유 기획 방 시작하기</h2>
       </div>
 
-      <label class="field-label" for="requestInput">팀이 함께 논의하고 설계할 요청을 입력하세요.</label>
-      <textarea id="requestInput" class="request-input" placeholder="PM, 백엔드, 프론트엔드, AI 에이전트가 함께 논의할 제품 또는 기능 요청을 자세히 적어주세요."></textarea>
+      <label class="field-label" for="requestInput">에이전트들이 함께 논의할 요청을 입력하세요.</label>
+      <textarea id="requestInput" class="request-input" placeholder="예: PRD를 올리면 PM, 백엔드, 프론트엔드, AI가 자유 토론으로 범위를 조정하고 구현 계획까지 만드는 워크스페이스"></textarea>
 
       <div class="composer-actions">
         <button id="exampleButton" class="secondary-button" type="button">예시 불러오기</button>
@@ -52,16 +52,16 @@
 
       <div class="phase-card">
         <div class="panel-head compact">
-          <p class="eyebrow">턴 순서</p>
-          <h3>1라운드, 고정 순서</h3>
+          <p class="eyebrow">진행 흐름</p>
+          <h3>PM 시작, 중간 자유 토론, PM 마무리</h3>
         </div>
         <ol class="phase-list" id="phaseList"></ol>
       </div>
 
       <div class="note-card">
-        <p class="note-title">현재 가능한 범위</p>
+        <p class="note-title">지금 달라진 점</p>
         <p class="note-body">
-          에이전트와 함께 범위를 논의하고, 채팅방에서 합의 과정을 확인하고, 역할별 구현 명세와 실제 실행 계획까지 바로 내려받을 수 있습니다.
+          백엔드, 프론트엔드, AI가 고정 순서로 한 번씩만 말하는 대신, 동적으로 발언 순서가 바뀌고 서로의 메시지에 대해 지지, 반박, 보완 의견을 남깁니다.
         </p>
       </div>
     </section>
@@ -69,13 +69,13 @@
     <section class="panel chat-panel">
       <div class="panel-head">
         <p class="eyebrow">공유 채팅방</p>
-        <h2>에이전트 토론 기록</h2>
+        <h2>주장과 반박이 보이는 실시간 토론</h2>
       </div>
       <div class="chat-stream" id="chatStream">
         <div class="empty-state">
           <p class="empty-kicker">활성 세션 없음</p>
-          <h3>세션을 시작하면 고정된 턴 순서대로 메시지가 쌓입니다.</h3>
-          <p>PM이 먼저 시작하고, 백엔드·프론트엔드·AI 검토 후 PM이 최종 MVP 결정을 내립니다.</p>
+          <h3>세션을 시작하면 각 에이전트의 주장, 반박 대상, 보완 제안이 카드 형태로 보입니다.</h3>
+          <p>PM이 먼저 문제를 정의하고, 중간에는 자유 토론이 진행되며, 마지막에 PM이 최종 결정을 내립니다.</p>
         </div>
       </div>
     </section>
@@ -83,7 +83,7 @@
     <aside class="panel output-panel">
       <div class="panel-head">
         <p class="eyebrow">산출물</p>
-        <h2>실행 결과 문서</h2>
+        <h2>명세와 실행 계획</h2>
       </div>
 
       <div class="decision-card">
@@ -95,7 +95,7 @@
       <div class="artifact-preview" id="artifactPreview">
         <div class="empty-state compact">
           <h3>아직 생성된 파일이 없습니다</h3>
-          <p>실행 단계가 시작되면 명세 문서와 구현 계획 마크다운이 여기에 표시됩니다.</p>
+          <p>명세 문서와 구현 실행 계획이 이 영역에 표시됩니다.</p>
         </div>
       </div>
     </aside>
@@ -108,7 +108,7 @@
         <span class="message-id"></span>
       </div>
       <h3 class="message-speaker"></h3>
-      <pre class="message-content"></pre>
+      <div class="message-body"></div>
     </article>
   </template>
 

@@ -393,13 +393,71 @@ body {
   font-size: 1.1rem;
 }
 
-.message-content {
-  margin: 0;
-  white-space: pre-wrap;
-  font-family: "IBM Plex Mono", monospace;
-  line-height: 1.6;
-  font-size: 0.9rem;
+.message-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+
+.message-line {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.line-label {
+  color: var(--muted);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.line-value {
+  line-height: 1.55;
   color: #2d342f;
+}
+
+.message-section-title {
+  margin-top: 0.1rem;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.message-list {
+  margin: 0;
+  padding-left: 1.15rem;
+  line-height: 1.55;
+  color: #2d342f;
+}
+
+.message-paragraph {
+  margin: 0;
+  line-height: 1.55;
+  color: #2d342f;
+}
+
+.message-pill {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  padding: 0.28rem 0.62rem;
+  border-radius: 999px;
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.message-pill[data-kind="challenge"] {
+  background: rgba(184, 76, 25, 0.15);
+  color: #8c3611;
+}
+
+.message-pill[data-kind="support"] {
+  background: rgba(23, 126, 137, 0.14);
+  color: #0f5f67;
+}
+
+.message-pill[data-kind="refine"] {
+  background: rgba(143, 93, 29, 0.14);
+  color: #7a4f19;
 }
 
 .artifact-toolbar {

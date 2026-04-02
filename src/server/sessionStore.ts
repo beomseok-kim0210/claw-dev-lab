@@ -1,16 +1,14 @@
 import { randomUUID } from "node:crypto";
 
-import type { GeneratedArtifact } from "../types/orchestration.js";
-import type { SessionArtifact, SessionEvent, SessionPhase, SessionSnapshot, SessionStatus } from "../types/session.js";
 import type { ChatMessage } from "../types/chat.js";
 import type { OrchestrationPhaseKey, OrchestrationPhaseUpdate } from "../types/orchestration.js";
+import type { GeneratedArtifact } from "../types/orchestration.js";
+import type { SessionArtifact, SessionEvent, SessionPhase, SessionSnapshot, SessionStatus } from "../types/session.js";
 
 const DEFAULT_PHASES: Array<{ key: OrchestrationPhaseKey; label: string }> = [
   { key: "user", label: "사용자 요청" },
   { key: "pm-initial", label: "PM 문제 정의" },
-  { key: "backend", label: "백엔드 검토" },
-  { key: "frontend", label: "프론트엔드 검토" },
-  { key: "ai", label: "AI 검토" },
+  { key: "discussion", label: "자유 토론" },
   { key: "pm-final", label: "PM 최종 결정" },
   { key: "execution", label: "명세 산출물" },
   { key: "implementation", label: "구현 실행 계획" },

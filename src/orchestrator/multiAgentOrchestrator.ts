@@ -3,7 +3,14 @@ import { generateBackendSpec, formatBackendDiscussion, runBackendDiscussion } fr
 import { generateFrontendSpec, formatFrontendDiscussion, runFrontendDiscussion } from "../agents/frontendAgent.js";
 import { generateImplementationPlan } from "../agents/implementationPlanner.js";
 import { formatPmFinalDecision, formatPmInitialDiscussion, runPmFinalDecision, runPmInitialDiscussion } from "../agents/pmAgent.js";
+import { formatAgentReaction, runAgentReaction } from "../agents/reactionAgent.js";
 import { OllamaClient } from "../llm/ollamaClient.js";
+import type { AgentRole } from "../types/chat.js";
+import type {
+  AIDiscussion,
+  BackendDiscussion,
+  FrontendDiscussion,
+} from "../types/contracts.js";
 import type {
   OrchestrationHooks,
   OrchestrationPhaseKey,
@@ -17,6 +24,8 @@ type MultiAgentOrchestratorArgs = {
   outputDir: string;
   hooks?: OrchestrationHooks;
 };
+
+type DiscussionRole = Exclude<AgentRole, "pm">;
 
 export class MultiAgentOrchestrator {
   private readonly client: OllamaClient;
@@ -35,7 +44,7 @@ export class MultiAgentOrchestrator {
     await this.emitMessage(userMessage);
     await this.emitPhase("user", "사용자 요청", "completed", "사용자가 공유 채팅방에 요청을 등록했습니다.");
 
-    await this.emitPhase("pm-initial", "PM 문제 정의", "active", "PM 에이전트가 제품 문제와 MVP 범위를 정리하고 있습니다.");
+    await this.emitPhase("pm-initial", "PM 문제 정의", "active", "PM 에이전트가 토론의 기준선과 MVP 문제를 정리하고 있습니다.");
     const pmInitial = await runPmInitialDiscussion({
       client: this.client,
       userRequest,
@@ -43,39 +52,61 @@ export class MultiAgentOrchestrator {
     });
     const pmInitialMessage = chat.addAgentMessage("pm", formatPmInitialDiscussion(pmInitial));
     await this.emitMessage(pmInitialMessage);
-    await this.emitPhase("pm-initial", "PM 문제 정의", "completed", "PM 에이전트가 초기 MVP 프레이밍을 확정했습니다.");
+    await this.emitPhase("pm-initial", "PM 문제 정의", "completed", "PM 에이전트가 초기 문제 정의와 MVP 기준을 고정했습니다.");
 
-    await this.emitPhase("backend", "백엔드 검토", "active", "백엔드 에이전트가 API, 데이터 모델, 제약 사항을 제안하고 있습니다.");
-    const backend = await runBackendDiscussion({
-      client: this.client,
-      userRequest,
-      messages: chat.getMessages(),
-    });
-    const backendMessage = chat.addAgentMessage("backend", formatBackendDiscussion(backend));
-    await this.emitMessage(backendMessage);
-    await this.emitPhase("backend", "백엔드 검토", "completed", "백엔드 에이전트가 기술 검토를 마쳤습니다.");
+    await this.emitPhase("discussion", "자유 토론", "active", "백엔드, 프론트엔드, AI 에이전트가 주장과 반박을 주고받고 있습니다.");
+    const discussionOrder = this.buildDiscussionOrder(userRequest);
 
-    await this.emitPhase("frontend", "프론트엔드 검토", "active", "프론트엔드 에이전트가 화면 구조와 사용성을 설계하고 있습니다.");
-    const frontend = await runFrontendDiscussion({
-      client: this.client,
-      userRequest,
-      messages: chat.getMessages(),
-    });
-    const frontendMessage = chat.addAgentMessage("frontend", formatFrontendDiscussion(frontend));
-    await this.emitMessage(frontendMessage);
-    await this.emitPhase("frontend", "프론트엔드 검토", "completed", "프론트엔드 에이전트가 UI 검토를 마쳤습니다.");
+    let backend!: BackendDiscussion;
+    let frontend!: FrontendDiscussion;
+    let ai!: AIDiscussion;
 
-    await this.emitPhase("ai", "AI 검토", "active", "AI 전문가가 기능, 실현 가능성, 위험 요소를 평가하고 있습니다.");
-    const ai = await runAIDiscussion({
-      client: this.client,
-      userRequest,
-      messages: chat.getMessages(),
-    });
-    const aiMessage = chat.addAgentMessage("ai", formatAIDiscussion(ai));
-    await this.emitMessage(aiMessage);
-    await this.emitPhase("ai", "AI 검토", "completed", "AI 전문가가 AI 기능 검토를 마쳤습니다.");
+    for (const role of discussionOrder) {
+      if (role === "backend") {
+        backend = await runBackendDiscussion({
+          client: this.client,
+          userRequest,
+          messages: chat.getMessages(),
+        });
+        await this.emitMessage(chat.addAgentMessage("backend", formatBackendDiscussion(backend)));
+        continue;
+      }
 
-    await this.emitPhase("pm-final", "PM 최종 결정", "active", "PM 에이전트가 논의를 종합해 최종 MVP 방향을 결정하고 있습니다.");
+      if (role === "frontend") {
+        frontend = await runFrontendDiscussion({
+          client: this.client,
+          userRequest,
+          messages: chat.getMessages(),
+        });
+        await this.emitMessage(chat.addAgentMessage("frontend", formatFrontendDiscussion(frontend)));
+        continue;
+      }
+
+      ai = await runAIDiscussion({
+        client: this.client,
+        userRequest,
+        messages: chat.getMessages(),
+      });
+      await this.emitMessage(chat.addAgentMessage("ai", formatAIDiscussion(ai)));
+    }
+
+    const reactionOrder = this.rotateRoles(discussionOrder, 1);
+    const reactions = [];
+    for (const role of reactionOrder) {
+      const targetMessage = this.pickReactionTarget(role, chat.getMessages());
+      const reaction = await runAgentReaction({
+        client: this.client,
+        role,
+        userRequest,
+        messages: chat.getMessages(),
+        targetMessage,
+      });
+      reactions.push(reaction);
+      await this.emitMessage(chat.addAgentMessage(role, formatAgentReaction(reaction)));
+    }
+    await this.emitPhase("discussion", "자유 토론", "completed", "중간 자유 토론이 끝났고 각 역할의 주장과 반박이 정리되었습니다.");
+
+    await this.emitPhase("pm-final", "PM 최종 결정", "active", "PM 에이전트가 토론을 정리하고 최종 MVP 방향을 결정하고 있습니다.");
     const pmFinal = await runPmFinalDecision({
       client: this.client,
       userRequest,
@@ -85,7 +116,7 @@ export class MultiAgentOrchestrator {
     await this.emitMessage(pmFinalMessage);
     await this.emitPhase("pm-final", "PM 최종 결정", "completed", "PM 에이전트가 최종 MVP 방향을 확정했습니다.");
 
-    await this.emitPhase("execution", "명세 산출물", "active", "백엔드, 프론트엔드, AI 구현 문서를 생성하고 있습니다.");
+    await this.emitPhase("execution", "명세 산출물", "active", "역할별 구현 명세 문서를 생성하고 있습니다.");
     const backendSpec = await generateBackendSpec({
       client: this.client,
       userRequest,
@@ -106,9 +137,9 @@ export class MultiAgentOrchestrator {
       finalDecision: pmFinal,
       aiDiscussion: ai,
     });
-    await this.emitPhase("execution", "명세 산출물", "completed", "역할별 구현 명세를 생성했습니다.");
+    await this.emitPhase("execution", "명세 산출물", "completed", "백엔드, 프론트엔드, AI 명세 문서를 생성했습니다.");
 
-    await this.emitPhase("implementation", "구현 실행 계획", "active", "스펙을 실제 구현 작업 단위로 분해하고 있습니다.");
+    await this.emitPhase("implementation", "구현 실행 계획", "active", "설계 결과를 실제 구현 작업 단위로 분해하고 있습니다.");
     const implementationPlan = await generateImplementationPlan({
       client: this.client,
       userRequest,
@@ -127,7 +158,7 @@ export class MultiAgentOrchestrator {
       implementationPlan,
     });
     await this.hooks?.onArtifacts?.(artifacts);
-    await this.emitPhase("implementation", "구현 실행 계획", "completed", "구현 작업 순서와 완료 기준을 포함한 실행 계획을 생성했습니다.");
+    await this.emitPhase("implementation", "구현 실행 계획", "completed", "실제 구현 순서와 완료 기준이 담긴 계획까지 생성했습니다.");
 
     return {
       userRequest,
@@ -137,6 +168,7 @@ export class MultiAgentOrchestrator {
         backend,
         frontend,
         ai,
+        reactions,
         pmFinal,
       },
       specs: {
@@ -147,6 +179,29 @@ export class MultiAgentOrchestrator {
       },
       artifacts,
     };
+  }
+
+  private buildDiscussionOrder(userRequest: string): DiscussionRole[] {
+    const roles: DiscussionRole[] = ["backend", "frontend", "ai"];
+    const hash = Array.from(userRequest).reduce((acc, char) => acc + char.charCodeAt(0), 0);
+    return this.rotateRoles(roles, hash % roles.length);
+  }
+
+  private rotateRoles<T>(items: T[], offset: number): T[] {
+    if (items.length === 0) {
+      return [];
+    }
+    const normalized = ((offset % items.length) + items.length) % items.length;
+    return [...items.slice(normalized), ...items.slice(0, normalized)];
+  }
+
+  private pickReactionTarget(role: DiscussionRole, messages: OrchestrationResult["transcript"]): OrchestrationResult["transcript"][number] {
+    const reversed = [...messages].reverse();
+    const target = reversed.find((message) => message.role !== "user" && message.role !== role);
+    if (!target) {
+      throw new Error(`반응 대상 메시지를 찾지 못했습니다: ${role}`);
+    }
+    return target;
   }
 
   private async emitMessage(message: OrchestrationResult["transcript"][number]): Promise<void> {

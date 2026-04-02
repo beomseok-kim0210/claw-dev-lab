@@ -38,6 +38,11 @@ export function formatAIDiscussion(discussion: AIDiscussion): string {
   return [
     `제목: ${discussion.headline}`,
     `요약: ${discussion.summary}`,
+    `핵심 주장: ${discussion.claim}`,
+    "주장 근거:",
+    ...discussion.support.map((item) => `- ${item}`),
+    `반박 대상: ${discussion.rebuttalTarget}`,
+    `반박: ${discussion.rebuttal}`,
     "AI 기능:",
     ...discussion.aiFeatures.map((item) => `- ${item}`),
     "실현 가능성:",

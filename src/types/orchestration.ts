@@ -2,6 +2,7 @@ import type { ArtifactFileName, ChatMessage } from "./chat.js";
 import type {
   AIDiscussion,
   AIFeaturesSpec,
+  AgentReaction,
   BackendDiscussion,
   BackendSpec,
   FrontendDiscussion,
@@ -16,6 +17,7 @@ export type DiscussionBundle = {
   backend: BackendDiscussion;
   frontend: FrontendDiscussion;
   ai: AIDiscussion;
+  reactions: AgentReaction[];
   pmFinal: PMFinalDecision;
 };
 
@@ -35,9 +37,7 @@ export type GeneratedSpecs = {
 export type OrchestrationPhaseKey =
   | "user"
   | "pm-initial"
-  | "backend"
-  | "frontend"
-  | "ai"
+  | "discussion"
   | "pm-final"
   | "execution"
   | "implementation";

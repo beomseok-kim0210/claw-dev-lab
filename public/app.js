@@ -1,5 +1,5 @@
 const EXAMPLE_REQUEST =
-  "사용자가 PRD를 업로드하고, 멀티 에이전트와 함께 범위를 조율한 뒤, 백엔드·프론트엔드·AI 구현 명세를 바로 내보낼 수 있는 협업 워크스페이스를 설계해줘.";
+  "사용자가 PRD를 올리면 PM이 먼저 문제를 정의하고, 백엔드·프론트엔드·AI가 자유 토론으로 주장과 반박을 주고받은 뒤, 최종적으로 명세와 구현 실행 계획까지 만드는 워크스페이스를 설계해줘.";
 
 const state = {
   sessionId: null,
@@ -198,8 +198,8 @@ function renderTranscript(transcript) {
     chatStream.innerHTML = `
       <div class="empty-state">
         <p class="empty-kicker">아직 대화가 없습니다</p>
-        <h3>세션이 시작되면 에이전트 메시지가 여기에 표시됩니다.</h3>
-        <p>각 메시지는 고정된 턴 순서에 따라 추가되고, 공유 채팅방 문맥을 함께 참조합니다.</p>
+        <h3>세션이 시작되면 주장, 반박 대상, 보완 제안이 카드 형태로 표시됩니다.</h3>
+        <p>중간 토론은 고정 순서가 아니라 동적으로 진행되고, PM은 처음과 마지막에만 개입합니다.</p>
       </div>
     `;
     return;
@@ -212,18 +212,82 @@ function renderTranscript(transcript) {
     const role = fragment.querySelector(".message-role");
     const id = fragment.querySelector(".message-id");
     const speaker = fragment.querySelector(".message-speaker");
-    const content = fragment.querySelector(".message-content");
+    const body = fragment.querySelector(".message-body");
 
     card.dataset.role = message.role;
     role.textContent = roleLabel(message.role);
     id.textContent = message.id;
     speaker.textContent = message.speaker;
-    content.textContent = message.content;
+    body.innerHTML = renderMessageBody(message.content);
 
     chatStream.append(fragment);
   }
 
   chatStream.scrollTop = chatStream.scrollHeight;
+}
+
+function renderMessageBody(content) {
+  const lines = content.split("\n");
+  const blocks = [];
+  let listBuffer = [];
+
+  const flushList = () => {
+    if (listBuffer.length === 0) {
+      return;
+    }
+    blocks.push(`<ul class="message-list">${listBuffer.join("")}</ul>`);
+    listBuffer = [];
+  };
+
+  for (const line of lines) {
+    if (line.trim().length === 0) {
+      flushList();
+      continue;
+    }
+
+    if (line.startsWith("- ")) {
+      listBuffer.push(`<li>${escapeHtml(line.slice(2))}</li>`);
+      continue;
+    }
+
+    flushList();
+    const matched = line.match(/^([^:]+):\s*(.*)$/);
+    if (!matched) {
+      blocks.push(`<p class="message-paragraph">${escapeHtml(line)}</p>`);
+      continue;
+    }
+
+    const label = escapeHtml(matched[1] ?? "");
+    const value = matched[2] ?? "";
+    if (value.length === 0) {
+      blocks.push(`<div class="message-section-title">${label}</div>`);
+      continue;
+    }
+
+    if (matched[1] === "메시지 유형") {
+      blocks.push(
+        `<div class="message-line"><span class="line-label">${label}</span><span class="message-pill" data-kind="${reactionKind(value)}">${escapeHtml(value)}</span></div>`,
+      );
+      continue;
+    }
+
+    blocks.push(
+      `<div class="message-line"><span class="line-label">${label}</span><span class="line-value">${escapeHtml(value)}</span></div>`,
+    );
+  }
+
+  flushList();
+  return blocks.join("");
+}
+
+function reactionKind(value) {
+  if (value.includes("반박")) {
+    return "challenge";
+  }
+  if (value.includes("지지")) {
+    return "support";
+  }
+  return "refine";
 }
 
 function roleLabel(role) {
@@ -271,7 +335,7 @@ function renderArtifacts(artifacts) {
     artifactPreview.innerHTML = `
       <div class="empty-state compact">
         <h3>아직 생성된 파일이 없습니다</h3>
-        <p>실행 단계가 시작되면 명세 문서와 구현 계획 마크다운이 여기에 표시됩니다.</p>
+        <p>명세 문서와 구현 실행 계획이 이 영역에 표시됩니다.</p>
       </div>
     `;
     return;
@@ -390,11 +454,9 @@ function resetSessionView() {
 function defaultPhases() {
   return [
     { label: "사용자 요청", state: "pending", detail: "요청을 기다리고 있습니다." },
-    { label: "PM 문제 정의", state: "pending", detail: "PM 에이전트가 MVP 범위를 정리합니다." },
-    { label: "백엔드 검토", state: "pending", detail: "백엔드 에이전트가 API와 스키마를 제안합니다." },
-    { label: "프론트엔드 검토", state: "pending", detail: "프론트엔드 에이전트가 화면 구조를 정의합니다." },
-    { label: "AI 검토", state: "pending", detail: "AI 전문가가 기능과 위험 요소를 검토합니다." },
-    { label: "PM 최종 결정", state: "pending", detail: "PM 에이전트가 최종 방향을 확정합니다." },
+    { label: "PM 문제 정의", state: "pending", detail: "PM 에이전트가 토론의 기준선을 먼저 정합니다." },
+    { label: "자유 토론", state: "pending", detail: "백엔드, 프론트엔드, AI가 주장과 반박을 주고받습니다." },
+    { label: "PM 최종 결정", state: "pending", detail: "PM 에이전트가 토론을 정리하고 결론을 냅니다." },
     { label: "명세 산출물", state: "pending", detail: "역할별 구현 명세 문서가 생성됩니다." },
     { label: "구현 실행 계획", state: "pending", detail: "실제 개발 작업 순서와 완료 기준이 정리됩니다." },
   ];

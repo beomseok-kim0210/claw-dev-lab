@@ -8,11 +8,11 @@ export function buildPmInitialPrompt(userRequest: string, messages: ChatMessage[
   return buildHarnessPrompt({
     role: "pm",
     mode: "discussion",
-    objective: "제품 문제를 정의하고 현실적인 MVP 프레임을 먼저 고정한다.",
+    objective: "제품 문제를 정의하고 토론에서 다뤄야 할 핵심 쟁점을 먼저 고정한다.",
     responsibilities: [
-      "사용자 요청을 제품 문제와 목표로 재구성한다.",
-      "나머지 에이전트가 과도하게 범위를 넓히지 않도록 초기 기준선을 세운다.",
-      "성공 기준을 구현 관점에서 측정 가능한 형태로 적는다.",
+      "사용자 요청을 제품 문제와 MVP 목표로 재구성한다.",
+      "중간 토론에서 다뤄야 할 기준선을 명확히 세운다.",
+      "토론이 퍼지지 않도록 성공 기준을 구체적으로 적는다.",
     ],
     userRequest,
     messages,
@@ -27,8 +27,7 @@ export function buildPmInitialPrompt(userRequest: string, messages: ChatMessage[
       constraints: [
         "mvpGoals는 2개 이상 5개 이하",
         "successCriteria는 2개 이상 5개 이하",
-        "references는 대화 기록에 있는 ID만 사용",
-        "범위는 실제 구현 관점으로 유지",
+        "references는 실제로 영향을 준 메시지 ID만 사용",
       ],
     },
   });
@@ -41,18 +40,18 @@ export function buildPmFinalPrompt(userRequest: string, messages: ChatMessage[])
   return buildHarnessPrompt({
     role: "pm",
     mode: "discussion",
-    objective: "한 번의 토론 라운드를 정리해 하나의 MVP 방향을 최종 확정한다.",
+    objective: "자유 토론을 정리하고 하나의 MVP 방향으로 최종 결론을 내린다.",
     responsibilities: [
-      "에이전트 의견을 종합해 충돌을 해소한다.",
-      "반드시 하나의 실행 가능한 방향으로 결론을 내린다.",
-      "이번 단계에서 하지 않을 범위를 명확하게 잘라낸다.",
+      "에이전트들의 주장과 반박을 정리한다.",
+      "충돌이 있으면 왜 한쪽을 채택했는지 결정문에 반영한다.",
+      "바로 구현 가능한 범위와 제외 범위를 분명하게 나눈다.",
     ],
     userRequest,
     messages,
     contract: {
       schemaLines: [
         '  "headline": "짧은 최종 결정 제목",',
-        '  "summary": "합의를 요약하는 한 단락",',
+        '  "summary": "토론 합의를 요약하는 한 단락",',
         '  "mvpScope": ["범위 항목 1", "범위 항목 2", "범위 항목 3"],',
         '  "nonGoals": ["제외 항목 1", "제외 항목 2"],',
         '  "deliveryPlan": ["단계 1", "단계 2", "단계 3"],',
@@ -63,7 +62,7 @@ export function buildPmFinalPrompt(userRequest: string, messages: ChatMessage[])
         "mvpScope는 3개 이상 6개 이하",
         "nonGoals는 2개 이상 5개 이하",
         "deliveryPlan은 2개 이상 5개 이하",
-        "references는 결정에 가장 큰 영향을 준 메시지를 인용",
+        "references는 최종 결론에 가장 큰 영향을 준 메시지를 포함",
       ],
     },
   });
