@@ -2,128 +2,140 @@ import path from "node:path";
 
 import pc from "picocolors";
 
-import { CodingAgent } from "./agent.js";
-import { startRepl } from "./cli.js";
-import { loadConfig } from "./config.js";
-import { toolDefinitions } from "./tools.js";
+import { DEFAULT_EXAMPLE_REQUEST, loadAppConfig } from "./config.js";
+import { OllamaClient } from "./llm/ollamaClient.js";
+import { printExecutionReport } from "./orchestrator/consoleReporter.js";
+import { MultiAgentOrchestrator } from "./orchestrator/multiAgentOrchestrator.js";
 
 type ParsedArgs = {
   cwd: string;
-  provider?: "anthropic" | "gemini";
+  outputDir?: string;
   model?: string;
-  prompt?: string;
+  baseUrl?: string;
+  request?: string;
   showHelp: boolean;
-  showTools: boolean;
+  useExample: boolean;
 };
 
 function printHelp(): void {
-  process.stdout.write(`MyClaudeCode\n\n`);
-  process.stdout.write(`Usage:\n`);
-  process.stdout.write(`  npm run dev\n`);
-  process.stdout.write(`  npm run dev -- "summarize this project"\n`);
-  process.stdout.write(`  npm run dev -- --provider gemini --cwd E:\\\\repo --model gemini-2.5-flash\n\n`);
-  process.stdout.write(`Flags:\n`);
-  process.stdout.write(`  --help   Show this help text\n`);
-  process.stdout.write(`  --tools  List available local tools\n`);
-  process.stdout.write(`  --cwd    Set the workspace root\n`);
-  process.stdout.write(`  --provider  Choose anthropic or gemini\n`);
-  process.stdout.write(`  --model  Override the model for the chosen provider\n`);
-}
-
-function printTools(): void {
-  process.stdout.write(`Available tools:\n`);
-  for (const tool of toolDefinitions) {
-    process.stdout.write(`- ${tool.name}: ${tool.description}\n`);
-  }
+  process.stdout.write("Multi-Agent Collaboration System\n\n");
+  process.stdout.write("Usage:\n");
+  process.stdout.write('  npm run dev -- "build an AI support dashboard"\n');
+  process.stdout.write("  npm run dev -- --example\n");
+  process.stdout.write(
+    '  npm run dev -- --cwd E:\\repo --output-dir .\\artifacts --model qwen3 "design a PRD workspace"\n\n',
+  );
+  process.stdout.write("Flags:\n");
+  process.stdout.write("  --help         Show this help text\n");
+  process.stdout.write("  --example      Run the built-in example request\n");
+  process.stdout.write("  --cwd          Set the working directory\n");
+  process.stdout.write("  --output-dir   Directory for backend-spec.md, frontend-spec.md, ai-features.md\n");
+  process.stdout.write("  --model        Override the Ollama model\n");
+  process.stdout.write("  --base-url     Override the Ollama base URL\n");
 }
 
 function parseArgs(argv: string[]): ParsedArgs {
   let cwd = process.cwd();
-  let provider: "anthropic" | "gemini" | undefined;
+  let outputDir: string | undefined;
   let model: string | undefined;
-  const promptParts: string[] = [];
+  let baseUrl: string | undefined;
   let showHelp = false;
-  let showTools = false;
+  let useExample = false;
+  const requestParts: string[] = [];
 
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
-    if (arg === undefined) {
+    if (!arg) {
       continue;
     }
-    if (arg === "--help") {
-      showHelp = true;
-      continue;
+
+    switch (arg) {
+      case "--help":
+        showHelp = true;
+        break;
+      case "--example":
+        useExample = true;
+        break;
+      case "--cwd":
+        cwd = path.resolve(argv[i + 1] ?? cwd);
+        i += 1;
+        break;
+      case "--output-dir":
+        outputDir = path.resolve(argv[i + 1] ?? cwd);
+        i += 1;
+        break;
+      case "--model":
+        model = argv[i + 1];
+        i += 1;
+        break;
+      case "--base-url":
+        baseUrl = argv[i + 1];
+        i += 1;
+        break;
+      default:
+        requestParts.push(arg);
+        break;
     }
-    if (arg === "--tools") {
-      showTools = true;
-      continue;
-    }
-    if (arg === "--cwd") {
-      cwd = path.resolve(argv[i + 1] ?? cwd);
-      i += 1;
-      continue;
-    }
-    if (arg === "--provider") {
-      const next = argv[i + 1];
-      if (next === "anthropic" || next === "gemini") {
-        provider = next;
-      }
-      i += 1;
-      continue;
-    }
-    if (arg === "--model") {
-      model = argv[i + 1];
-      i += 1;
-      continue;
-    }
-    promptParts.push(arg);
   }
 
-  const parsed: ParsedArgs = { cwd, showHelp, showTools };
-  if (provider !== undefined) {
-    parsed.provider = provider;
+  const parsed: ParsedArgs = {
+    cwd,
+    showHelp,
+    useExample,
+  };
+
+  if (outputDir !== undefined) {
+    parsed.outputDir = outputDir;
   }
   if (model !== undefined) {
     parsed.model = model;
   }
-  if (promptParts.length > 0) {
-    parsed.prompt = promptParts.join(" ");
+  if (baseUrl !== undefined) {
+    parsed.baseUrl = baseUrl;
   }
+  if (requestParts.length > 0) {
+    parsed.request = requestParts.join(" ");
+  }
+
   return parsed;
 }
 
 async function main(): Promise<void> {
-  const { cwd, provider, model, prompt, showHelp, showTools } = parseArgs(process.argv.slice(2));
-  if (showHelp) {
+  const parsed = parseArgs(process.argv.slice(2));
+  if (parsed.showHelp) {
     printHelp();
     return;
   }
-  if (showTools) {
-    printTools();
-    return;
-  }
-  const config = loadConfig({
-    ...(provider !== undefined ? { provider } : {}),
-    ...(model !== undefined ? { model } : {}),
-  });
-  const agent = new CodingAgent({
-    provider: config.provider,
-    apiKey: config.apiKey,
-    model: config.model,
-    cwd,
-  });
 
-  if (prompt) {
-    const result = await agent.runTurn(prompt);
-    process.stdout.write(`${result.text}\n`);
+  const request = parsed.useExample ? DEFAULT_EXAMPLE_REQUEST : parsed.request;
+  if (!request) {
+    printHelp();
     return;
   }
 
-  await startRepl(agent, {
-    provider: config.provider,
-    model: config.model,
-    cwd,
+  const config = loadAppConfig({
+    cwd: parsed.cwd,
+    ...(parsed.outputDir !== undefined ? { outputDir: parsed.outputDir } : {}),
+    ...(parsed.baseUrl !== undefined ? { ollamaBaseUrl: parsed.baseUrl } : {}),
+    ...(parsed.model !== undefined ? { ollamaModel: parsed.model } : {}),
   });
+
+  const client = new OllamaClient({
+    baseUrl: config.ollamaBaseUrl,
+    model: config.ollamaModel,
+    timeoutMs: config.timeoutMs,
+  });
+
+  const orchestrator = new MultiAgentOrchestrator({
+    client,
+    outputDir: config.outputDir,
+  });
+
+  process.stdout.write(`Using Ollama model ${config.ollamaModel} at ${config.ollamaBaseUrl}\n`);
+  process.stdout.write(`Output directory: ${config.outputDir}\n`);
+
+  const result = await orchestrator.run(request);
+  printExecutionReport(result);
 }
 
 main().catch((error) => {
