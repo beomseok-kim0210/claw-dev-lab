@@ -271,7 +271,7 @@ function renderArtifacts(artifacts) {
     artifactPreview.innerHTML = `
       <div class="empty-state compact">
         <h3>아직 생성된 파일이 없습니다</h3>
-        <p>실행 단계가 시작되면 생성된 마크다운 명세와 다운로드 링크가 여기에 표시됩니다.</p>
+        <p>실행 단계가 시작되면 명세 문서와 구현 계획 마크다운이 여기에 표시됩니다.</p>
       </div>
     `;
     return;
@@ -395,7 +395,8 @@ function defaultPhases() {
     { label: "프론트엔드 검토", state: "pending", detail: "프론트엔드 에이전트가 화면 구조를 정의합니다." },
     { label: "AI 검토", state: "pending", detail: "AI 전문가가 기능과 위험 요소를 검토합니다." },
     { label: "PM 최종 결정", state: "pending", detail: "PM 에이전트가 최종 방향을 확정합니다." },
-    { label: "실행 산출물", state: "pending", detail: "명세 문서와 구현 메모가 생성됩니다." },
+    { label: "명세 산출물", state: "pending", detail: "역할별 구현 명세 문서가 생성됩니다." },
+    { label: "구현 실행 계획", state: "pending", detail: "실제 개발 작업 순서와 완료 기준이 정리됩니다." },
   ];
 }
 

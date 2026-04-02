@@ -12,7 +12,8 @@ const DEFAULT_PHASES: Array<{ key: OrchestrationPhaseKey; label: string }> = [
   { key: "frontend", label: "프론트엔드 검토" },
   { key: "ai", label: "AI 검토" },
   { key: "pm-final", label: "PM 최종 결정" },
-  { key: "execution", label: "실행 산출물" },
+  { key: "execution", label: "명세 산출물" },
+  { key: "implementation", label: "구현 실행 계획" },
 ];
 
 type SessionRecord = {

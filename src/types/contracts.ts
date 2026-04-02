@@ -101,6 +101,27 @@ export const aiFeaturesSpecSchema = z
   })
   .strict();
 
+const implementationTaskSchema = z
+  .object({
+    id: z.string().regex(/^task-\d{2}$/),
+    title: z.string().min(1),
+    owner: z.enum(["pm", "backend", "frontend", "ai"]),
+    goal: z.string().min(1),
+    deliverables: shortBulletListSchema,
+    acceptanceCriteria: shortBulletListSchema,
+  })
+  .strict();
+
+export const implementationPlanSchema = z
+  .object({
+    overview: z.string().min(1),
+    milestones: shortBulletListSchema,
+    tasks: z.array(implementationTaskSchema).min(4).max(4),
+    validationChecklist: shortBulletListSchema,
+    kickoffPrompt: z.string().min(1),
+  })
+  .strict();
+
 export type PMInitialDiscussion = z.infer<typeof pmInitialDiscussionSchema>;
 export type BackendDiscussion = z.infer<typeof backendDiscussionSchema>;
 export type FrontendDiscussion = z.infer<typeof frontendDiscussionSchema>;
@@ -109,3 +130,4 @@ export type PMFinalDecision = z.infer<typeof pmFinalDecisionSchema>;
 export type BackendSpec = z.infer<typeof backendSpecSchema>;
 export type FrontendSpec = z.infer<typeof frontendSpecSchema>;
 export type AIFeaturesSpec = z.infer<typeof aiFeaturesSpecSchema>;
+export type ImplementationPlan = z.infer<typeof implementationPlanSchema>;

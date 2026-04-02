@@ -2,7 +2,13 @@ import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import type { ArtifactFileName } from "../types/chat.js";
-import type { AIFeaturesSpec, BackendSpec, FrontendSpec, PMFinalDecision } from "../types/contracts.js";
+import type {
+  AIFeaturesSpec,
+  BackendSpec,
+  FrontendSpec,
+  ImplementationPlan,
+  PMFinalDecision,
+} from "../types/contracts.js";
 import type { GeneratedArtifact } from "../types/orchestration.js";
 
 export async function writeExecutionArtifacts(args: {
@@ -11,6 +17,7 @@ export async function writeExecutionArtifacts(args: {
   backendSpec: BackendSpec;
   frontendSpec: FrontendSpec;
   aiFeaturesSpec: AIFeaturesSpec;
+  implementationPlan: ImplementationPlan;
 }): Promise<GeneratedArtifact[]> {
   await mkdir(args.outputDir, { recursive: true });
 
@@ -26,6 +33,10 @@ export async function writeExecutionArtifacts(args: {
     {
       filename: "ai-features.md",
       content: renderAIFeaturesMarkdown(args.finalDecision, args.aiFeaturesSpec),
+    },
+    {
+      filename: "implementation-plan.md",
+      content: renderImplementationPlanMarkdown(args.finalDecision, args.implementationPlan),
     },
   ];
 
@@ -125,6 +136,50 @@ function renderAIFeaturesMarkdown(finalDecision: PMFinalDecision, spec: AIFeatur
     "## 예시 코드",
     renderCodeBlock(spec.exampleCode.language, spec.exampleCode.snippet),
   ].join("\n");
+}
+
+function renderImplementationPlanMarkdown(finalDecision: PMFinalDecision, plan: ImplementationPlan): string {
+  return [
+    "# 구현 실행 계획",
+    "",
+    "## PM 최종 방향",
+    `- ${finalDecision.finalDecision}`,
+    ...finalDecision.mvpScope.map((item) => `- ${item}`),
+    "",
+    "## 전체 전략",
+    plan.overview,
+    "",
+    "## 마일스톤",
+    ...plan.milestones.map((item) => `- ${item}`),
+    "",
+    "## 역할별 작업",
+    ...plan.tasks.flatMap((task) => [
+      `### ${task.id} · ${task.title}`,
+      `- 담당: ${roleLabel(task.owner)}`,
+      `- 목표: ${task.goal}`,
+      `- 주요 산출물: ${task.deliverables.join(", ")}`,
+      ...task.acceptanceCriteria.map((item) => `- 완료 기준: ${item}`),
+      "",
+    ]),
+    "## 검증 체크리스트",
+    ...plan.validationChecklist.map((item) => `- ${item}`),
+    "",
+    "## 구현 에이전트 시작 지시문",
+    plan.kickoffPrompt,
+  ].join("\n");
+}
+
+function roleLabel(role: "pm" | "backend" | "frontend" | "ai"): string {
+  if (role === "pm") {
+    return "PM 에이전트";
+  }
+  if (role === "backend") {
+    return "백엔드 에이전트";
+  }
+  if (role === "frontend") {
+    return "프론트엔드 에이전트";
+  }
+  return "AI 전문가";
 }
 
 function renderCodeBlock(language: string, snippet: string): string {

@@ -18,4 +18,8 @@ export const AGENT_SPEAKERS: Record<AgentRole, string> = {
   ai: "AI 전문가",
 };
 
-export type ArtifactFileName = "backend-spec.md" | "frontend-spec.md" | "ai-features.md";
+export type ArtifactFileName =
+  | "backend-spec.md"
+  | "frontend-spec.md"
+  | "ai-features.md"
+  | "implementation-plan.md";

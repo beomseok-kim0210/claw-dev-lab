@@ -6,6 +6,7 @@ import type {
   BackendSpec,
   FrontendDiscussion,
   FrontendSpec,
+  ImplementationPlan,
   PMFinalDecision,
   PMInitialDiscussion,
 } from "./contracts.js";
@@ -28,6 +29,7 @@ export type GeneratedSpecs = {
   backend: BackendSpec;
   frontend: FrontendSpec;
   ai: AIFeaturesSpec;
+  implementation: ImplementationPlan;
 };
 
 export type OrchestrationPhaseKey =
@@ -37,7 +39,8 @@ export type OrchestrationPhaseKey =
   | "frontend"
   | "ai"
   | "pm-final"
-  | "execution";
+  | "execution"
+  | "implementation";
 
 export type OrchestrationPhaseState = "pending" | "active" | "completed" | "failed";
 

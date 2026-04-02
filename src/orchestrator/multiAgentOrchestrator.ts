@@ -1,6 +1,7 @@
 import { generateAIFeaturesSpec, formatAIDiscussion, runAIDiscussion } from "../agents/aiAgent.js";
 import { generateBackendSpec, formatBackendDiscussion, runBackendDiscussion } from "../agents/backendAgent.js";
 import { generateFrontendSpec, formatFrontendDiscussion, runFrontendDiscussion } from "../agents/frontendAgent.js";
+import { generateImplementationPlan } from "../agents/implementationPlanner.js";
 import { formatPmFinalDecision, formatPmInitialDiscussion, runPmFinalDecision, runPmInitialDiscussion } from "../agents/pmAgent.js";
 import { OllamaClient } from "../llm/ollamaClient.js";
 import type {
@@ -84,7 +85,7 @@ export class MultiAgentOrchestrator {
     await this.emitMessage(pmFinalMessage);
     await this.emitPhase("pm-final", "PM 최종 결정", "completed", "PM 에이전트가 최종 MVP 방향을 확정했습니다.");
 
-    await this.emitPhase("execution", "실행 산출물", "active", "백엔드, 프론트엔드, AI 구현 문서를 생성하고 있습니다.");
+    await this.emitPhase("execution", "명세 산출물", "active", "백엔드, 프론트엔드, AI 구현 문서를 생성하고 있습니다.");
     const backendSpec = await generateBackendSpec({
       client: this.client,
       userRequest,
@@ -105,6 +106,17 @@ export class MultiAgentOrchestrator {
       finalDecision: pmFinal,
       aiDiscussion: ai,
     });
+    await this.emitPhase("execution", "명세 산출물", "completed", "역할별 구현 명세를 생성했습니다.");
+
+    await this.emitPhase("implementation", "구현 실행 계획", "active", "스펙을 실제 구현 작업 단위로 분해하고 있습니다.");
+    const implementationPlan = await generateImplementationPlan({
+      client: this.client,
+      userRequest,
+      finalDecision: pmFinal,
+      backendSpec,
+      frontendSpec,
+      aiFeaturesSpec,
+    });
 
     const artifacts = await writeExecutionArtifacts({
       outputDir: this.outputDir,
@@ -112,9 +124,10 @@ export class MultiAgentOrchestrator {
       backendSpec,
       frontendSpec,
       aiFeaturesSpec,
+      implementationPlan,
     });
     await this.hooks?.onArtifacts?.(artifacts);
-    await this.emitPhase("execution", "실행 산출물", "completed", "구현 가능한 마크다운 산출물을 생성했습니다.");
+    await this.emitPhase("implementation", "구현 실행 계획", "completed", "구현 작업 순서와 완료 기준을 포함한 실행 계획을 생성했습니다.");
 
     return {
       userRequest,
@@ -130,6 +143,7 @@ export class MultiAgentOrchestrator {
         backend: backendSpec,
         frontend: frontendSpec,
         ai: aiFeaturesSpec,
+        implementation: implementationPlan,
       },
       artifacts,
     };
