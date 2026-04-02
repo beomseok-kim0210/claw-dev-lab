@@ -328,7 +328,7 @@ function renderDecision(transcript, error) {
     : finalPm.content;
 }
 
-function renderArtifacts(artifacts) {
+function legacyRenderArtifacts(artifacts) {
   artifactToolbar.innerHTML = "";
 
   if (!artifacts.length) {
@@ -362,7 +362,7 @@ function renderArtifacts(artifacts) {
     <div class="artifact-actions">
       <a class="download-link" href="${activeArtifact.url}" download="${activeArtifact.filename}">파일 다운로드</a>
     </div>
-    <div class="markdown-body">${renderMarkdown(activeArtifact.content)}</div>
+    ${renderArtifactContent(activeArtifact)}
   `;
 }
 
@@ -473,6 +473,62 @@ function detailForState(state) {
     return "실패했습니다.";
   }
   return "대기 중입니다.";
+}
+
+function renderArtifacts(artifacts) {
+  artifactToolbar.innerHTML = "";
+
+  if (!artifacts.length) {
+    const failureMessage =
+      state.snapshot?.status === "failed" && state.snapshot?.error
+        ? `<p class="artifact-error">${escapeHtml(state.snapshot.error)}</p>`
+        : "";
+
+    artifactPreview.innerHTML = `
+      <div class="empty-state compact">
+        <h3>아직 생성된 파일이 없습니다</h3>
+        <p>명세 문서와 구현 실행 계획은 마지막 단계에서 표시됩니다.</p>
+        ${failureMessage}
+      </div>
+    `;
+    return;
+  }
+
+  if (!state.activeArtifact || !artifacts.some((artifact) => artifact.filename === state.activeArtifact)) {
+    state.activeArtifact = artifacts[0].filename;
+  }
+
+  for (const artifact of artifacts) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = `artifact-tab${artifact.filename === state.activeArtifact ? " active" : ""}`;
+    button.textContent = artifact.filename;
+    button.addEventListener("click", () => {
+      state.activeArtifact = artifact.filename;
+      renderArtifacts(artifacts);
+    });
+    artifactToolbar.append(button);
+  }
+
+  const activeArtifact = artifacts.find((artifact) => artifact.filename === state.activeArtifact) ?? artifacts[0];
+  artifactPreview.innerHTML = `
+    <div class="artifact-actions">
+      <a class="download-link" href="${activeArtifact.url}" download="${activeArtifact.filename}">파일 다운로드</a>
+    </div>
+    ${renderArtifactContent(activeArtifact)}
+  `;
+}
+
+function renderArtifactContent(artifact) {
+  if (isMarkdownArtifact(artifact.filename)) {
+    return `<div class="markdown-body">${renderMarkdown(artifact.content)}</div>`;
+  }
+
+  return `<pre class="code-block"><code>${escapeHtml(artifact.content)}</code></pre>`;
+}
+
+function isMarkdownArtifact(filename) {
+  return filename.toLowerCase().endsWith(".md");
 }
 
 boot();

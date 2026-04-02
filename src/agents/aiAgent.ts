@@ -8,6 +8,7 @@ import {
   type AIFeaturesSpec,
   type PMFinalDecision,
 } from "../types/contracts.js";
+import { buildDeterministicAIFeaturesSpec } from "./specFallbacks.js";
 
 export async function runAIDiscussion(args: {
   client: OllamaClient;
@@ -28,10 +29,17 @@ export async function generateAIFeaturesSpec(args: {
   aiDiscussion: AIDiscussion;
 }): Promise<AIFeaturesSpec> {
   const prompt = buildAIFeaturesSpecPrompt(args);
-  return args.client.generateStructured({
-    ...prompt,
-    schema: aiFeaturesSpecSchema,
-  });
+  try {
+    return await args.client.generateStructured({
+      ...prompt,
+      schema: aiFeaturesSpecSchema,
+      temperature: 0.1,
+      numPredict: 900,
+      maxRetries: 5,
+    });
+  } catch {
+    return buildDeterministicAIFeaturesSpec(args);
+  }
 }
 
 export function formatAIDiscussion(discussion: AIDiscussion): string {

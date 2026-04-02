@@ -40,7 +40,8 @@ export type OrchestrationPhaseKey =
   | "discussion"
   | "pm-final"
   | "execution"
-  | "implementation";
+  | "implementation"
+  | "coding";
 
 export type OrchestrationPhaseState = "pending" | "active" | "completed" | "failed";
 

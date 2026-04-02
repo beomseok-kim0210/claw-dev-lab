@@ -1,8 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import type { ChatMessage } from "../types/chat.js";
-import type { OrchestrationPhaseKey, OrchestrationPhaseUpdate } from "../types/orchestration.js";
-import type { GeneratedArtifact } from "../types/orchestration.js";
+import type { GeneratedArtifact, OrchestrationPhaseKey, OrchestrationPhaseUpdate } from "../types/orchestration.js";
 import type { SessionArtifact, SessionEvent, SessionPhase, SessionSnapshot, SessionStatus } from "../types/session.js";
 
 const DEFAULT_PHASES: Array<{ key: OrchestrationPhaseKey; label: string }> = [
@@ -12,6 +11,7 @@ const DEFAULT_PHASES: Array<{ key: OrchestrationPhaseKey; label: string }> = [
   { key: "pm-final", label: "PM 최종 결정" },
   { key: "execution", label: "명세 산출물" },
   { key: "implementation", label: "구현 실행 계획" },
+  { key: "coding", label: "코드 구현" },
 ];
 
 type SessionRecord = {
@@ -106,6 +106,24 @@ export class SessionStore {
     phase.detail = update.detail;
     phase.timestamp = update.timestamp;
     record.snapshot.updatedAt = new Date().toISOString();
+
+    this.emit(id, {
+      type: "phase",
+      phase: { ...phase },
+    });
+  }
+
+  markActivePhaseFailed(id: string, detail: string): void {
+    const record = this.requireRecord(id);
+    const phase = [...record.snapshot.phases].reverse().find((item) => item.state === "active");
+    if (!phase) {
+      return;
+    }
+
+    phase.state = "failed";
+    phase.detail = detail;
+    phase.timestamp = new Date().toISOString();
+    record.snapshot.updatedAt = phase.timestamp;
 
     this.emit(id, {
       type: "phase",

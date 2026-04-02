@@ -8,6 +8,7 @@ import {
   type BackendSpec,
   type PMFinalDecision,
 } from "../types/contracts.js";
+import { buildDeterministicBackendSpec } from "./specFallbacks.js";
 
 export async function runBackendDiscussion(args: {
   client: OllamaClient;
@@ -28,10 +29,17 @@ export async function generateBackendSpec(args: {
   backendDiscussion: BackendDiscussion;
 }): Promise<BackendSpec> {
   const prompt = buildBackendSpecPrompt(args);
-  return args.client.generateStructured({
-    ...prompt,
-    schema: backendSpecSchema,
-  });
+  try {
+    return await args.client.generateStructured({
+      ...prompt,
+      schema: backendSpecSchema,
+      temperature: 0.1,
+      numPredict: 900,
+      maxRetries: 5,
+    });
+  } catch {
+    return buildDeterministicBackendSpec(args);
+  }
 }
 
 export function formatBackendDiscussion(discussion: BackendDiscussion): string {

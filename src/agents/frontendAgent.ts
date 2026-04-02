@@ -8,6 +8,7 @@ import {
   type FrontendSpec,
   type PMFinalDecision,
 } from "../types/contracts.js";
+import { buildDeterministicFrontendSpec } from "./specFallbacks.js";
 
 export async function runFrontendDiscussion(args: {
   client: OllamaClient;
@@ -28,10 +29,17 @@ export async function generateFrontendSpec(args: {
   frontendDiscussion: FrontendDiscussion;
 }): Promise<FrontendSpec> {
   const prompt = buildFrontendSpecPrompt(args);
-  return args.client.generateStructured({
-    ...prompt,
-    schema: frontendSpecSchema,
-  });
+  try {
+    return await args.client.generateStructured({
+      ...prompt,
+      schema: frontendSpecSchema,
+      temperature: 0.1,
+      numPredict: 900,
+      maxRetries: 5,
+    });
+  } catch {
+    return buildDeterministicFrontendSpec(args);
+  }
 }
 
 export function formatFrontendDiscussion(discussion: FrontendDiscussion): string {

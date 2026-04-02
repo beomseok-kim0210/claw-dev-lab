@@ -535,6 +535,15 @@ body {
   font-family: "IBM Plex Mono", monospace;
 }
 
+.artifact-error {
+  margin: 0.9rem 0 0;
+  padding: 0.9rem 1rem;
+  border-radius: 18px;
+  background: rgba(180, 35, 24, 0.08);
+  color: #8f2318;
+  line-height: 1.5;
+}
+
 @keyframes rise-in {
   from {
     opacity: 0;

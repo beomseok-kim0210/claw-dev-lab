@@ -67,6 +67,7 @@ export class OllamaClient {
           "",
           "The previous response was invalid.",
           `Validation issue: ${stringifyError(error)}`,
+          "If an array failed minimum length validation, add concrete non-duplicate items until the minimum is satisfied.",
           "Return valid JSON only. Do not include markdown fences, commentary, or extra keys.",
         ].join("\n");
       }

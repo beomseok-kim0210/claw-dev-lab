@@ -137,6 +137,30 @@ export const implementationPlanSchema = z
   })
   .strict();
 
+export const implementationUpdateSchema = z
+  .object({
+    headline: z.string().min(1),
+    taskId: z.string().regex(/^task-\d{2}$/),
+    objective: z.string().min(1),
+    targetFiles: z.array(z.string().min(1)).min(1).max(6),
+    worklog: shortBulletListSchema,
+    validation: shortBulletListSchema,
+    references: referenceListSchema,
+  })
+  .strict();
+
+export const implementationReviewSchema = z
+  .object({
+    headline: z.string().min(1),
+    reactionType: z.enum(["challenge", "support", "refine"]),
+    targetMessageId: messageReferenceSchema,
+    targetFiles: z.array(z.string().min(1)).min(1).max(6),
+    assessment: z.string().min(1),
+    adjustment: z.string().min(1),
+    references: referenceListSchema,
+  })
+  .strict();
+
 export type PMInitialDiscussion = z.infer<typeof pmInitialDiscussionSchema>;
 export type BackendDiscussion = z.infer<typeof backendDiscussionSchema>;
 export type FrontendDiscussion = z.infer<typeof frontendDiscussionSchema>;
@@ -147,3 +171,5 @@ export type BackendSpec = z.infer<typeof backendSpecSchema>;
 export type FrontendSpec = z.infer<typeof frontendSpecSchema>;
 export type AIFeaturesSpec = z.infer<typeof aiFeaturesSpecSchema>;
 export type ImplementationPlan = z.infer<typeof implementationPlanSchema>;
+export type ImplementationUpdate = z.infer<typeof implementationUpdateSchema>;
+export type ImplementationReview = z.infer<typeof implementationReviewSchema>;

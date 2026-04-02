@@ -1,7 +1,6 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 
-import type { ArtifactFileName } from "../types/chat.js";
 import type {
   AIFeaturesSpec,
   BackendSpec,
@@ -11,6 +10,11 @@ import type {
 } from "../types/contracts.js";
 import type { GeneratedArtifact } from "../types/orchestration.js";
 
+type ArtifactInput = {
+  filename: string;
+  content: string;
+};
+
 export async function writeExecutionArtifacts(args: {
   outputDir: string;
   finalDecision: PMFinalDecision;
@@ -19,9 +23,7 @@ export async function writeExecutionArtifacts(args: {
   aiFeaturesSpec: AIFeaturesSpec;
   implementationPlan: ImplementationPlan;
 }): Promise<GeneratedArtifact[]> {
-  await mkdir(args.outputDir, { recursive: true });
-
-  const artifacts: Array<{ filename: ArtifactFileName; content: string }> = [
+  return writeArtifacts(args.outputDir, [
     {
       filename: "backend-spec.md",
       content: renderBackendSpecMarkdown(args.finalDecision, args.backendSpec),
@@ -38,11 +40,15 @@ export async function writeExecutionArtifacts(args: {
       filename: "implementation-plan.md",
       content: renderImplementationPlanMarkdown(args.finalDecision, args.implementationPlan),
     },
-  ];
+  ]);
+}
 
+export async function writeArtifacts(outputDir: string, artifacts: ArtifactInput[]): Promise<GeneratedArtifact[]> {
   const writtenArtifacts: GeneratedArtifact[] = [];
+
   for (const artifact of artifacts) {
-    const absolutePath = path.resolve(args.outputDir, artifact.filename);
+    const absolutePath = path.resolve(outputDir, artifact.filename);
+    await mkdir(path.dirname(absolutePath), { recursive: true });
     await writeFile(absolutePath, artifact.content, "utf8");
     writtenArtifacts.push({
       filename: artifact.filename,
@@ -56,12 +62,12 @@ export async function writeExecutionArtifacts(args: {
 
 function renderBackendSpecMarkdown(finalDecision: PMFinalDecision, spec: BackendSpec): string {
   return [
-    "# 백엔드 명세서",
+    "# 백엔드 명세",
     "",
     "## PM 최종 방향",
     spec.overview,
     "",
-    "### 최종 MVP 방향",
+    "### 최종 MVP 범위",
     `- ${finalDecision.finalDecision}`,
     ...finalDecision.mvpScope.map((item) => `- ${item}`),
     "",
@@ -71,7 +77,7 @@ function renderBackendSpecMarkdown(finalDecision: PMFinalDecision, spec: Backend
     "## 데이터 모델",
     ...spec.dataModel.map((item) => `- ${item}`),
     "",
-    "## 기술 제약 사항",
+    "## 기술 제약",
     ...spec.constraints.map((item) => `- ${item}`),
     "",
     "## 구현 단계",
@@ -84,12 +90,12 @@ function renderBackendSpecMarkdown(finalDecision: PMFinalDecision, spec: Backend
 
 function renderFrontendSpecMarkdown(finalDecision: PMFinalDecision, spec: FrontendSpec): string {
   return [
-    "# 프론트엔드 명세서",
+    "# 프론트엔드 명세",
     "",
     "## PM 최종 방향",
     spec.overview,
     "",
-    "### 최종 MVP 방향",
+    "### 최종 MVP 범위",
     `- ${finalDecision.finalDecision}`,
     ...finalDecision.mvpScope.map((item) => `- ${item}`),
     "",
@@ -117,7 +123,7 @@ function renderAIFeaturesMarkdown(finalDecision: PMFinalDecision, spec: AIFeatur
     "## PM 최종 방향",
     spec.overview,
     "",
-    "### 최종 MVP 방향",
+    "### 최종 MVP 범위",
     `- ${finalDecision.finalDecision}`,
     ...finalDecision.mvpScope.map((item) => `- ${item}`),
     "",
@@ -146,7 +152,7 @@ function renderImplementationPlanMarkdown(finalDecision: PMFinalDecision, plan: 
     `- ${finalDecision.finalDecision}`,
     ...finalDecision.mvpScope.map((item) => `- ${item}`),
     "",
-    "## 전체 전략",
+    "## 전체 개요",
     plan.overview,
     "",
     "## 마일스톤",
@@ -154,10 +160,10 @@ function renderImplementationPlanMarkdown(finalDecision: PMFinalDecision, plan: 
     "",
     "## 역할별 작업",
     ...plan.tasks.flatMap((task) => [
-      `### ${task.id} · ${task.title}`,
+      `### ${task.id} - ${task.title}`,
       `- 담당: ${roleLabel(task.owner)}`,
       `- 목표: ${task.goal}`,
-      `- 주요 산출물: ${task.deliverables.join(", ")}`,
+      ...task.deliverables.map((item) => `- 산출물: ${item}`),
       ...task.acceptanceCriteria.map((item) => `- 완료 기준: ${item}`),
       "",
     ]),

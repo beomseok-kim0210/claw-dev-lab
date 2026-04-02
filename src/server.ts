@@ -46,13 +46,8 @@ const server = createServer(async (req, res) => {
     }
 
     const sessionMatch = requestUrl.pathname.match(/^\/api\/sessions\/([^/]+)$/);
-    if (method === "GET" && sessionMatch) {
-      const sessionId = sessionMatch[1];
-      if (!sessionId) {
-        return sendJson(res, 404, { error: "세션을 찾을 수 없습니다." });
-      }
-
-      const session = sessionStore.getSession(sessionId);
+    if (method === "GET" && sessionMatch?.[1]) {
+      const session = sessionStore.getSession(sessionMatch[1]);
       if (!session) {
         return sendJson(res, 404, { error: "세션을 찾을 수 없습니다." });
       }
@@ -60,31 +55,23 @@ const server = createServer(async (req, res) => {
     }
 
     const eventMatch = requestUrl.pathname.match(/^\/api\/sessions\/([^/]+)\/events$/);
-    if (method === "GET" && eventMatch) {
-      const sessionId = eventMatch[1];
-      if (!sessionId) {
-        return sendJson(res, 404, { error: "세션을 찾을 수 없습니다." });
-      }
-      return handleSse(sessionId, res);
+    if (method === "GET" && eventMatch?.[1]) {
+      return handleSse(eventMatch[1], res);
     }
 
     const artifactMatch = requestUrl.pathname.match(/^\/api\/sessions\/([^/]+)\/artifacts\/([^/]+)$/);
-    if (method === "GET" && artifactMatch) {
+    if (method === "GET" && artifactMatch?.[1] && artifactMatch?.[2]) {
       const sessionId = artifactMatch[1];
-      const rawFilename = artifactMatch[2];
-      if (!sessionId || !rawFilename) {
-        return sendJson(res, 404, { error: "산출물을 찾을 수 없습니다." });
-      }
-
-      const filename = decodeURIComponent(rawFilename);
+      const filename = decodeURIComponent(artifactMatch[2]);
       const artifact = sessionStore.getArtifact(sessionId, filename);
+
       if (!artifact) {
         return sendJson(res, 404, { error: "산출물을 찾을 수 없습니다." });
       }
 
       res.writeHead(200, {
-        "Content-Type": "text/markdown; charset=utf-8",
-        "Content-Disposition": `attachment; filename="${filename}"`,
+        "Content-Type": contentTypeFor(filename),
+        "Content-Disposition": `attachment; filename="${path.basename(filename)}"`,
       });
       res.end(artifact.content);
       return;
@@ -94,7 +81,7 @@ const server = createServer(async (req, res) => {
       return serveStatic(requestUrl.pathname, res);
     }
 
-    return sendJson(res, 404, { error: "요청한 경로를 찾을 수 없습니다." });
+    return sendJson(res, 404, { error: "요청 경로를 찾을 수 없습니다." });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     return sendJson(res, 500, { error: message });
@@ -129,6 +116,7 @@ async function runSession(sessionId: string, userRequest: string): Promise<void>
     sessionStore.setStatus(sessionId, "completed");
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
+    sessionStore.markActivePhaseFailed(sessionId, message);
     sessionStore.setStatus(sessionId, "failed", message);
   }
 }
@@ -153,6 +141,7 @@ function handleSse(sessionId: string, res: import("node:http").ServerResponse): 
     res.write(`event: ${event.type}\n`);
     res.write(`data: ${JSON.stringify(event)}\n\n`);
   });
+
   if (!unsubscribe) {
     res.end();
     return;
@@ -207,6 +196,12 @@ function contentTypeFor(filePath: string): string {
   }
   if (filePath.endsWith(".json")) {
     return "application/json; charset=utf-8";
+  }
+  if (filePath.endsWith(".md")) {
+    return "text/markdown; charset=utf-8";
+  }
+  if (filePath.endsWith(".ts") || filePath.endsWith(".tsx")) {
+    return "text/plain; charset=utf-8";
   }
   return "text/plain; charset=utf-8";
 }
