@@ -3,3 +3,10 @@ dist
 .env
 *.log
 .multi-agent-output/
+backend-spec.md
+frontend-spec.md
+ai-features.md
+infra-spec.md
+implementation-plan.md
+build-brief.md
+generated-app/

@@ -20,22 +20,30 @@ type ParsedArgs = {
   useExample: boolean;
 };
 
+type NpmConfigArgs = {
+  cwd?: string;
+  outputDir?: string;
+  targetDir?: string;
+  model?: string;
+  baseUrl?: string;
+};
+
 function printHelp(): void {
-  process.stdout.write("멀티 에이전트 협업 시스템\n\n");
-  process.stdout.write("사용법:\n");
-  process.stdout.write('  npm run dev -- "AI 고객지원 대시보드를 설계해줘"\n');
+  process.stdout.write("Multi-Agent Collaboration System\n\n");
+  process.stdout.write("Usage:\n");
+  process.stdout.write('  npm run dev -- "build an AI support dashboard"\n');
   process.stdout.write("  npm run dev -- --example\n");
   process.stdout.write(
-    '  npm run dev -- --cwd E:\\repo --output-dir .\\artifacts --target-dir C:\\Users\\me\\Desktop\\live-workspace --model qwen3 "PRD 워크스페이스를 설계해줘"\n\n',
+    `  npm run dev -- --cwd E:\\repo --output-dir .\\artifacts --target-dir ${resolveDefaultTargetDirectory()} --model qwen3 "design a PRD workspace"\n\n`,
   );
-  process.stdout.write("옵션:\n");
-  process.stdout.write("  --help         도움말 출력\n");
-  process.stdout.write("  --example      내장 예시 요청 실행\n");
-  process.stdout.write("  --cwd          작업 디렉터리 지정\n");
-  process.stdout.write("  --output-dir   결과 문서와 생성 코드 출력 경로\n");
-  process.stdout.write(`  --target-dir   생성 코드를 직접 쓸 폴더 경로 (기본 예시: ${resolveDefaultTargetDirectory()})\n`);
-  process.stdout.write("  --model        Ollama 모델 이름 덮어쓰기\n");
-  process.stdout.write("  --base-url     Ollama 기본 URL 덮어쓰기\n");
+  process.stdout.write("Flags:\n");
+  process.stdout.write("  --help         Show this help text\n");
+  process.stdout.write("  --example      Run the built-in example request\n");
+  process.stdout.write("  --cwd          Set the working directory\n");
+  process.stdout.write("  --output-dir   Directory for markdown artifacts\n");
+  process.stdout.write("  --target-dir   Directory where generated code files are written\n");
+  process.stdout.write("  --model        Override the Ollama model\n");
+  process.stdout.write("  --base-url     Override the Ollama base URL\n");
 }
 
 function parseArgs(argv: string[]): ParsedArgs {
@@ -50,8 +58,16 @@ function parseArgs(argv: string[]): ParsedArgs {
 
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
-    if (!arg) {
+    if (!arg || arg === "--") {
       continue;
+    }
+
+    const inline = splitInlineFlag(arg);
+    if (inline) {
+      const consumed = applyFlagValue(inline.flag, inline.value);
+      if (consumed) {
+        continue;
+      }
     }
 
     switch (arg) {
@@ -87,6 +103,32 @@ function parseArgs(argv: string[]): ParsedArgs {
     }
   }
 
+  const npmConfig = readNpmConfigArgs();
+  const consumedFromNpm: string[] = [];
+
+  if (cwd === process.cwd() && npmConfig.cwd) {
+    cwd = path.resolve(npmConfig.cwd);
+    consumedFromNpm.push(npmConfig.cwd);
+  }
+  if (outputDir === undefined && npmConfig.outputDir) {
+    outputDir = path.resolve(cwd, npmConfig.outputDir);
+    consumedFromNpm.push(npmConfig.outputDir);
+  }
+  if (targetDir === undefined && npmConfig.targetDir) {
+    targetDir = path.resolve(cwd, npmConfig.targetDir);
+    consumedFromNpm.push(npmConfig.targetDir);
+  }
+  if (model === undefined && npmConfig.model) {
+    model = npmConfig.model;
+    consumedFromNpm.push(npmConfig.model);
+  }
+  if (baseUrl === undefined && npmConfig.baseUrl) {
+    baseUrl = npmConfig.baseUrl;
+    consumedFromNpm.push(npmConfig.baseUrl);
+  }
+
+  const cleanedRequestParts = stripLeadingMirroredValues(requestParts, consumedFromNpm);
+
   const parsed: ParsedArgs = {
     cwd,
     showHelp,
@@ -105,11 +147,119 @@ function parseArgs(argv: string[]): ParsedArgs {
   if (baseUrl !== undefined) {
     parsed.baseUrl = baseUrl;
   }
-  if (requestParts.length > 0) {
-    parsed.request = requestParts.join(" ");
+  if (cleanedRequestParts.length > 0) {
+    parsed.request = cleanedRequestParts.join(" ");
   }
 
   return parsed;
+
+  function applyFlagValue(flag: string, value: string): boolean {
+    switch (flag) {
+      case "--cwd":
+        cwd = path.resolve(value);
+        return true;
+      case "--output-dir":
+        outputDir = path.resolve(cwd, value);
+        return true;
+      case "--target-dir":
+        targetDir = path.resolve(cwd, value);
+        return true;
+      case "--model":
+        model = value;
+        return true;
+      case "--base-url":
+        baseUrl = value;
+        return true;
+      default:
+        return false;
+    }
+  }
+}
+
+function splitInlineFlag(arg: string): { flag: string; value: string } | undefined {
+  const separatorIndex = arg.indexOf("=");
+  if (!arg.startsWith("--") || separatorIndex < 0) {
+    return undefined;
+  }
+
+  return {
+    flag: arg.slice(0, separatorIndex),
+    value: arg.slice(separatorIndex + 1),
+  };
+}
+
+function readNpmConfigArgs(): NpmConfigArgs {
+  const parsed: NpmConfigArgs = {};
+  const cwd = readNpmConfigValue("cwd");
+  const outputDir = readNpmConfigValue("output_dir");
+  const targetDir = readNpmConfigValue("target_dir");
+  const model = readNpmConfigValue("model");
+  const baseUrl = readNpmConfigValue("base_url");
+
+  if (cwd !== undefined) {
+    parsed.cwd = cwd;
+  }
+  if (outputDir !== undefined) {
+    parsed.outputDir = outputDir;
+  }
+  if (targetDir !== undefined) {
+    parsed.targetDir = targetDir;
+  }
+  if (model !== undefined) {
+    parsed.model = model;
+  }
+  if (baseUrl !== undefined) {
+    parsed.baseUrl = baseUrl;
+  }
+
+  return parsed;
+}
+
+function readNpmConfigValue(key: string): string | undefined {
+  const value = process.env[`npm_config_${key}`];
+  if (!value || value === "true" || value === "false") {
+    return undefined;
+  }
+  return value;
+}
+
+function stripLeadingMirroredValues(requestParts: string[], mirroredValues: string[]): string[] {
+  const queue = [...requestParts];
+  const remainingValues = mirroredValues.filter((value) => value.trim().length > 0);
+
+  while (queue.length > 0) {
+    const head = queue[0];
+    if (!head) {
+      queue.shift();
+      continue;
+    }
+
+    const matchedIndex = remainingValues.findIndex((value) => sameArgumentValue(head, value));
+    if (matchedIndex < 0) {
+      break;
+    }
+
+    queue.shift();
+    remainingValues.splice(matchedIndex, 1);
+  }
+
+  return queue;
+}
+
+function sameArgumentValue(left: string, right: string): boolean {
+  if (left === right) {
+    return true;
+  }
+
+  if (isProbablyPathLike(left) || isProbablyPathLike(right)) {
+    return path.resolve(left) === path.resolve(right);
+  }
+
+  return false;
+}
+
+function isProbablyPathLike(value: string): boolean {
+  return /[\\/]/u.test(value) || /^[A-Za-z]:/u.test(value) || value.startsWith(".");
 }
 
 async function main(): Promise<void> {
@@ -140,6 +290,7 @@ async function main(): Promise<void> {
 
   const pipedAnswers = input.isTTY ? [] : await readPipedAnswers();
   const rl = input.isTTY ? readline.createInterface({ input, output }) : undefined;
+
   try {
     const orchestrator = new MultiAgentOrchestrator({
       client,
@@ -154,39 +305,41 @@ async function main(): Promise<void> {
         onCodeActivity(update) {
           if (update.currentFile) {
             process.stdout.write(
-              `[파일 쓰기] ${update.owner} ${update.state === "completed" ? "완료" : "진행"} -> ${update.currentFile}\n`,
+              `[file-write] ${update.owner} ${update.state === "completed" ? "completed" : "writing"} -> ${update.currentFile}\n`,
             );
           }
         },
         async onClarificationRequest(plan) {
-          process.stdout.write(`\n[추가 확인] ${plan.summary}\n`);
+          process.stdout.write(`\n[clarification] ${plan.summary}\n`);
           const answers = [];
+
           for (const question of plan.questions) {
-            process.stdout.write(
-              `- ${question.id} | ${question.askedBy} | ${question.topic}\n  이유: ${question.reason}\n`,
-            );
+            process.stdout.write(`- ${question.id} | ${question.askedBy} | ${question.topic}\n  reason: ${question.reason}\n`);
+
             let answer = "";
             if (pipedAnswers.length > 0) {
               answer = pipedAnswers.shift() ?? "";
-              process.stdout.write(`  답변: ${answer}\n`);
+              process.stdout.write(`  answer: ${answer}\n`);
             } else if (rl) {
-              answer = (await rl.question(`  답변: `)).trim();
+              answer = (await rl.question("  answer: ")).trim();
             }
+
             answers.push({
               questionId: question.id,
-              answer: answer.length > 0 ? answer : "추가 정보 없이 기본 가정으로 진행합니다.",
+              answer: answer.length > 0 ? answer : "Proceed with a reasonable default assumption.",
             });
           }
+
           process.stdout.write("\n");
           return answers;
         },
       },
     });
 
-    process.stdout.write(`사용 모델: ${config.ollamaModel} (${config.ollamaBaseUrl})\n`);
-    process.stdout.write(`출력 디렉터리: ${config.outputDir}\n`);
+    process.stdout.write(`Model: ${config.ollamaModel} (${config.ollamaBaseUrl})\n`);
+    process.stdout.write(`Artifact directory: ${config.outputDir}\n`);
     if (parsed.targetDir) {
-      process.stdout.write(`코드 타깃 폴더: ${parsed.targetDir}\n`);
+      process.stdout.write(`Code target directory: ${parsed.targetDir}\n`);
     }
 
     const result = await orchestrator.run(request);
@@ -198,7 +351,7 @@ async function main(): Promise<void> {
 
 main().catch((error) => {
   const message = error instanceof Error ? error.message : String(error);
-  process.stderr.write(`${pc.red(`오류: ${message}`)}\n`);
+  process.stderr.write(`${pc.red(`Error: ${message}`)}\n`);
   process.exitCode = 1;
 });
 
