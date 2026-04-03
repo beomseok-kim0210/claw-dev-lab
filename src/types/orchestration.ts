@@ -15,6 +15,7 @@ import type {
   PMFinalDecision,
   PMInitialDiscussion,
 } from "./contracts.js";
+import type { BuildBrief } from "./generation.js";
 
 export type ClarificationAnswer = {
   questionId: ClarificationQuestion["id"];
@@ -50,6 +51,7 @@ export type GeneratedSpecs = {
   ai: AIFeaturesSpec;
   infra: InfraSpec;
   implementation: ImplementationPlan;
+  buildBrief: BuildBrief;
 };
 
 export type OrchestrationPhaseKey =

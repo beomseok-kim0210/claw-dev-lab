@@ -5,7 +5,8 @@ import {
   formatClarificationQuestionMessage,
   planClarification,
 } from "../agents/clarificationAgent.js";
-import { buildCodeArtifacts } from "../agents/codeScaffolder.js";
+import { generateBuildBrief } from "../agents/buildBriefAgent.js";
+import { generateCodeBundle } from "../agents/codegenAgent.js";
 import {
   formatImplementationReview,
   formatImplementationUpdate,
@@ -40,6 +41,7 @@ import type {
   OrchestrationPhaseKey,
   OrchestrationResult,
 } from "../types/orchestration.js";
+import type { BuildBrief } from "../types/generation.js";
 import { ChatStateManager } from "./chatState.js";
 import { writeArtifacts, writeExecutionArtifacts } from "./outputWriter.js";
 
@@ -204,6 +206,16 @@ export class MultiAgentOrchestrator {
       aiFeaturesSpec,
       infraSpec,
     );
+    const buildBrief = await generateBuildBrief({
+      client: this.client,
+      userRequest,
+      finalDecision: pmFinal,
+      backendSpec,
+      frontendSpec,
+      aiFeaturesSpec,
+      infraSpec,
+      implementationPlan,
+    });
 
     let artifacts = await writeExecutionArtifacts({
       outputDir: this.outputDir,
@@ -213,6 +225,7 @@ export class MultiAgentOrchestrator {
       aiFeaturesSpec,
       infraSpec,
       implementationPlan,
+      buildBrief,
     });
     await this.hooks?.onArtifacts?.(artifacts);
     await this.emitPhase("execution", "명세 산출물", "completed", "역할별 명세 문서를 생성했습니다.");
@@ -220,7 +233,7 @@ export class MultiAgentOrchestrator {
 
     await this.emitPhase("coding", "코드 구현", "active", "에이전트가 실제 코드 파일을 생성하고, 이어서 상호 리뷰를 남기고 있습니다.");
     await this.emitMessage(
-      chat.addAgentMessage("pm", formatCodingKickoffMessage(implementationPlan, this.codeOutputDir)),
+      chat.addAgentMessage("pm", formatCodingKickoffMessage(buildBrief, implementationPlan, this.codeOutputDir)),
     );
 
     const codingTaskMap = new Map(
@@ -238,17 +251,19 @@ export class MultiAgentOrchestrator {
         continue;
       }
 
-      const pendingFiles = buildCodeArtifacts({
-        owner,
+      const existingFiles = artifacts
+        .map((artifact) => artifact.filename)
+        .filter((filename) => !filename.endsWith(".md"));
+      const bundle = await generateCodeBundle({
+        client: this.client,
+        role: owner,
         userRequest,
-        finalDecision: pmFinal,
-        backendSpec,
-        frontendSpec,
-        aiFeaturesSpec,
-        infraSpec,
-        codePathPrefix: this.codePathPrefix,
+        messages: chat.getMessages(),
+        buildBrief,
+        task,
+        existingFiles,
       });
-      const targetFiles = pendingFiles.map((file) => file.filename);
+      const targetFiles = bundle.files.map((file) => withCodePrefix(file.path, this.codePathPrefix));
       await this.emitCodeActivity({
         owner,
         targetDirectory: this.codeOutputDir,
@@ -276,8 +291,8 @@ export class MultiAgentOrchestrator {
 
       const writtenCodeArtifacts = await writeArtifacts(
         this.codeOutputDir,
-        pendingFiles.map((file) => ({
-          filename: file.filename,
+        bundle.files.map((file) => ({
+          filename: withCodePrefix(file.path, this.codePathPrefix),
           content: file.content,
         })),
         {
@@ -315,9 +330,9 @@ export class MultiAgentOrchestrator {
     await this.emitMessage(chat.addAgentMessage("pm", formatCodingWrapUpMessage(codeArtifacts)));
     await this.emitPhase("coding", "코드 구현", "completed", "역할별 코드 생성과 상호 리뷰가 마무리되었습니다.");
 
-    return {
-      userRequest,
-      transcript: chat.getMessages(),
+      return {
+        userRequest,
+        transcript: chat.getMessages(),
       discussion: {
         pmInitial,
         backend,
@@ -334,6 +349,7 @@ export class MultiAgentOrchestrator {
         ai: aiFeaturesSpec,
         infra: infraSpec,
         implementation: implementationPlan,
+        buildBrief,
       },
       artifacts,
     };
@@ -439,9 +455,12 @@ export class MultiAgentOrchestrator {
   }
 }
 
-function formatCodingKickoffMessage(plan: ImplementationPlan, codeOutputDir: string): string {
+function formatCodingKickoffMessage(buildBrief: BuildBrief, plan: ImplementationPlan, codeOutputDir: string): string {
   return [
     "제목: 구현 단계 시작",
+    `앱 이름: ${buildBrief.appName}`,
+    `앱 유형: ${buildBrief.appType}`,
+    `핵심 목표: ${buildBrief.primaryGoal}`,
     `구현 목표: ${plan.overview}`,
     `코드 출력 경로: ${codeOutputDir}`,
     "작업 순서:",
@@ -476,4 +495,11 @@ function mergeArtifacts(existing: GeneratedArtifact[], next: GeneratedArtifact[]
   }
 
   return [...merged.values()];
+}
+
+function withCodePrefix(filename: string, codePathPrefix: string): string {
+  if (!codePathPrefix) {
+    return filename;
+  }
+  return `${codePathPrefix.replace(/[\\/]+$/u, "")}/${filename.replace(/^[\\/]+/u, "")}`;
 }

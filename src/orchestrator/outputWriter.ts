@@ -9,6 +9,7 @@ import type {
   InfraSpec,
   PMFinalDecision,
 } from "../types/contracts.js";
+import type { BuildBrief } from "../types/generation.js";
 import type { GeneratedArtifact } from "../types/orchestration.js";
 
 type ArtifactInput = {
@@ -28,6 +29,7 @@ export async function writeExecutionArtifacts(args: {
   aiFeaturesSpec: AIFeaturesSpec;
   infraSpec: InfraSpec;
   implementationPlan: ImplementationPlan;
+  buildBrief: BuildBrief;
 }): Promise<GeneratedArtifact[]> {
   return writeArtifacts(args.outputDir, [
     {
@@ -49,6 +51,10 @@ export async function writeExecutionArtifacts(args: {
     {
       filename: "implementation-plan.md",
       content: renderImplementationPlanMarkdown(args.finalDecision, args.implementationPlan),
+    },
+    {
+      filename: "build-brief.md",
+      content: renderBuildBriefMarkdown(args.buildBrief),
     },
   ]);
 }
@@ -218,6 +224,46 @@ function renderImplementationPlanMarkdown(finalDecision: PMFinalDecision, plan: 
     "",
     "## 구현 에이전트 시작 지시문",
     plan.kickoffPrompt,
+  ].join("\n");
+}
+
+function renderBuildBriefMarkdown(buildBrief: BuildBrief): string {
+  return [
+    "# Build Brief",
+    "",
+    `- App Name: ${buildBrief.appName}`,
+    `- App Type: ${buildBrief.appType}`,
+    `- Primary Goal: ${buildBrief.primaryGoal}`,
+    "",
+    "## Target Users",
+    ...buildBrief.targetUsers.map((item) => `- ${item}`),
+    "",
+    "## Experience Principles",
+    ...buildBrief.experiencePrinciples.map((item) => `- ${item}`),
+    "",
+    "## Key Features",
+    ...buildBrief.keyFeatures.map((item) => `- ${item}`),
+    "",
+    "## Screens",
+    ...buildBrief.screens.map((item) => `- ${item}`),
+    "",
+    "## Entities",
+    ...buildBrief.entities.map((item) => `- ${item}`),
+    "",
+    "## API Endpoints",
+    ...(buildBrief.apiEndpoints.length > 0 ? buildBrief.apiEndpoints.map((item) => `- ${item}`) : ["- 없음"]),
+    "",
+    "## Stack",
+    ...buildBrief.stack.map((item) => `- ${item}`),
+    "",
+    "## File Layout",
+    ...buildBrief.fileLayout.map((item) => `- ${item}`),
+    "",
+    "## Acceptance Checks",
+    ...buildBrief.acceptanceChecks.map((item) => `- ${item}`),
+    "",
+    "## Notes",
+    ...buildBrief.notes.map((item) => `- ${item}`),
   ].join("\n");
 }
 
