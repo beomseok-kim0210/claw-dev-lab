@@ -1,3 +1,4 @@
+import { resolveGenerationProfile } from "../llm/modelProfiles.js";
 import { OllamaClient } from "../llm/ollamaClient.js";
 import { buildTestDiscussionPrompt, buildTestSpecPrompt } from "../prompts/test.js";
 import type { ChatMessage } from "../types/chat.js";
@@ -17,13 +18,13 @@ export async function runTestDiscussion(args: {
   messages: ChatMessage[];
 }): Promise<TestDiscussion> {
   const prompt = buildTestDiscussionPrompt(args.userRequest, args.messages);
+  const profile = resolveGenerationProfile(args.client.getModelName(), "discussion");
+
   try {
     return await args.client.generateStructured({
       ...prompt,
       schema: testDiscussionSchema,
-      temperature: 0.1,
-      numPredict: 600,
-      maxRetries: 5,
+      ...profile,
     });
   } catch {
     return buildDeterministicTestDiscussion(args);
@@ -37,13 +38,13 @@ export async function generateTestSpec(args: {
   testDiscussion: TestDiscussion;
 }): Promise<TestSpec> {
   const prompt = buildTestSpecPrompt(args);
+  const profile = resolveGenerationProfile(args.client.getModelName(), "spec");
+
   try {
     return await args.client.generateStructured({
       ...prompt,
       schema: testSpecSchema,
-      temperature: 0.1,
-      numPredict: 900,
-      maxRetries: 5,
+      ...profile,
     });
   } catch {
     return buildDeterministicTestSpec(args);

@@ -1,3 +1,4 @@
+import { resolveGenerationProfile } from "../llm/modelProfiles.js";
 import { OllamaClient } from "../llm/ollamaClient.js";
 import { buildFrontendDiscussionPrompt, buildFrontendSpecPrompt } from "../prompts/frontend.js";
 import type { ChatMessage } from "../types/chat.js";
@@ -17,13 +18,13 @@ export async function runFrontendDiscussion(args: {
   messages: ChatMessage[];
 }): Promise<FrontendDiscussion> {
   const prompt = buildFrontendDiscussionPrompt(args.userRequest, args.messages);
+  const profile = resolveGenerationProfile(args.client.getModelName(), "discussion");
+
   try {
     return await args.client.generateStructured({
       ...prompt,
       schema: frontendDiscussionSchema,
-      temperature: 0.1,
-      numPredict: 600,
-      maxRetries: 5,
+      ...profile,
     });
   } catch {
     return buildDeterministicFrontendDiscussion(args);
@@ -37,13 +38,13 @@ export async function generateFrontendSpec(args: {
   frontendDiscussion: FrontendDiscussion;
 }): Promise<FrontendSpec> {
   const prompt = buildFrontendSpecPrompt(args);
+  const profile = resolveGenerationProfile(args.client.getModelName(), "spec");
+
   try {
     return await args.client.generateStructured({
       ...prompt,
       schema: frontendSpecSchema,
-      temperature: 0.1,
-      numPredict: 900,
-      maxRetries: 5,
+      ...profile,
     });
   } catch {
     return buildDeterministicFrontendSpec(args);

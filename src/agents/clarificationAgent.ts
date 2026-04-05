@@ -1,10 +1,8 @@
+import { resolveGenerationProfile } from "../llm/modelProfiles.js";
 import { OllamaClient } from "../llm/ollamaClient.js";
 import { buildClarificationPrompt } from "../prompts/clarification.js";
 import type { ChatMessage } from "../types/chat.js";
-import {
-  clarificationPlanSchema,
-  type ClarificationPlan,
-} from "../types/contracts.js";
+import { clarificationPlanSchema, type ClarificationPlan } from "../types/contracts.js";
 
 export async function planClarification(args: {
   client: OllamaClient;
@@ -12,19 +10,18 @@ export async function planClarification(args: {
   messages: ChatMessage[];
 }): Promise<ClarificationPlan> {
   const prompt = buildClarificationPrompt(args.userRequest, args.messages);
+  const profile = resolveGenerationProfile(args.client.getModelName(), "clarification");
 
   try {
     return await args.client.generateStructured({
       ...prompt,
       schema: clarificationPlanSchema,
-      temperature: 0.1,
-      numPredict: 500,
-      maxRetries: 5,
+      ...profile,
     });
   } catch {
     return {
       needsInput: false,
-      summary: "추가 확인 없이 현재 정보만으로 진행할 수 있습니다.",
+      summary: "추가 확인 없이 현재 정보로 진행해도 된다고 판단했습니다.",
       questions: [],
     };
   }

@@ -1,6 +1,7 @@
 import { builtinModules } from "node:module";
 import path from "node:path";
 
+import { resolveGenerationProfile } from "../llm/modelProfiles.js";
 import { OllamaClient } from "../llm/ollamaClient.js";
 import { buildCodeBundlePrompt } from "../prompts/codegen.js";
 import type { AgentRole, ChatMessage } from "../types/chat.js";
@@ -31,14 +32,13 @@ export async function generateCodeBundle(args: {
   existingFiles: string[];
 }): Promise<GeneratedCodeBundle> {
   const prompt = buildCodeBundlePrompt(args);
+  const profile = resolveGenerationProfile(args.client.getModelName(), "codegen");
 
   try {
     const generated = await args.client.generateStructured({
       ...prompt,
       schema: generatedCodeBundleSchema,
-      temperature: 0.1,
-      numPredict: 1600,
-      maxRetries: 3,
+      ...profile,
     });
 
     return normalizeBundle(args, generated);

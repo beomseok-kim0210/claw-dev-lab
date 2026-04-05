@@ -1,3 +1,4 @@
+import { resolveGenerationProfile } from "../llm/modelProfiles.js";
 import { OllamaClient } from "../llm/ollamaClient.js";
 import { buildBackendDiscussionPrompt, buildBackendSpecPrompt } from "../prompts/backend.js";
 import type { ChatMessage } from "../types/chat.js";
@@ -17,13 +18,13 @@ export async function runBackendDiscussion(args: {
   messages: ChatMessage[];
 }): Promise<BackendDiscussion> {
   const prompt = buildBackendDiscussionPrompt(args.userRequest, args.messages);
+  const profile = resolveGenerationProfile(args.client.getModelName(), "discussion");
+
   try {
     return await args.client.generateStructured({
       ...prompt,
       schema: backendDiscussionSchema,
-      temperature: 0.1,
-      numPredict: 600,
-      maxRetries: 5,
+      ...profile,
     });
   } catch {
     return buildDeterministicBackendDiscussion(args);
@@ -37,13 +38,13 @@ export async function generateBackendSpec(args: {
   backendDiscussion: BackendDiscussion;
 }): Promise<BackendSpec> {
   const prompt = buildBackendSpecPrompt(args);
+  const profile = resolveGenerationProfile(args.client.getModelName(), "spec");
+
   try {
     return await args.client.generateStructured({
       ...prompt,
       schema: backendSpecSchema,
-      temperature: 0.1,
-      numPredict: 900,
-      maxRetries: 5,
+      ...profile,
     });
   } catch {
     return buildDeterministicBackendSpec(args);
@@ -59,7 +60,7 @@ export function formatBackendDiscussion(discussion: BackendDiscussion): string {
     ...discussion.support.map((item) => `- ${item}`),
     `반박 대상: ${discussion.rebuttalTarget}`,
     `반박: ${discussion.rebuttal}`,
-    "백엔드 제안:",
+    "API 제안:",
     ...discussion.apiDesign.map((item) => `- ${item}`),
     "데이터 모델:",
     ...discussion.dataModel.map((item) => `- ${item}`),

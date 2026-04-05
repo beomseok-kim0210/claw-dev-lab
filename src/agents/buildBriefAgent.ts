@@ -1,3 +1,4 @@
+import { resolveGenerationProfile } from "../llm/modelProfiles.js";
 import { OllamaClient } from "../llm/ollamaClient.js";
 import { buildBuildBriefPrompt } from "../prompts/buildBrief.js";
 import type {
@@ -23,14 +24,13 @@ export async function generateBuildBrief(args: {
   implementationPlan: ImplementationPlan;
 }): Promise<BuildBrief> {
   const prompt = buildBuildBriefPrompt(args);
+  const profile = resolveGenerationProfile(args.client.getModelName(), "build-brief");
 
   try {
     return await args.client.generateStructured({
       ...prompt,
       schema: buildBriefSchema,
-      temperature: 0.1,
-      numPredict: 900,
-      maxRetries: 5,
+      ...profile,
     });
   } catch {
     return buildFallbackBuildBrief(args);
@@ -54,11 +54,7 @@ function buildFallbackBuildBrief(args: {
     appName,
     appType,
     primaryGoal: args.finalDecision.finalDecision,
-    targetUsers: takeUnique([
-      "end users",
-      "operators",
-      ...extractCandidateLabels(args.userRequest),
-    ]).slice(0, 4),
+    targetUsers: takeUnique(["end users", "operators", ...extractCandidateLabels(args.userRequest)]).slice(0, 4),
     experiencePrinciples: takeUnique([
       ...args.frontendSpec.usabilityChecklist,
       "Keep the first-run path obvious and friction-light.",
@@ -70,16 +66,8 @@ function buildFallbackBuildBrief(args: {
       ...args.aiFeaturesSpec.features,
       ...args.backendSpec.apiDesign,
     ]).slice(0, 8),
-    screens: takeUnique([
-      ...args.frontendSpec.screens,
-      "Dashboard",
-      "Detail View",
-    ]).slice(0, 8),
-    entities: takeUnique([
-      ...args.backendSpec.dataModel,
-      "AppState",
-      "UserAction",
-    ]).slice(0, 8),
+    screens: takeUnique([...args.frontendSpec.screens, "Dashboard", "Detail View"]).slice(0, 8),
+    entities: takeUnique([...args.backendSpec.dataModel, "AppState", "UserAction"]).slice(0, 8),
     apiEndpoints: args.backendSpec.apiDesign.slice(0, 10),
     stack: detectStack(appType),
     fileLayout: detectFileLayout(appType),
@@ -139,15 +127,15 @@ function detectAppType(userRequest: string, frontendSpec: FrontendSpec, backendS
 
 function detectStack(appType: BuildBrief["appType"]): string[] {
   if (appType === "api") {
-    return ["Node.js", "TypeScript", "built-in HTTP server"];
+    return ["Node.js", "TypeScript", "built-in HTTP server", "node:test"];
   }
   if (appType === "mobile-web-app") {
-    return ["Node.js", "TypeScript", "vanilla mobile web UI"];
+    return ["Node.js", "TypeScript", "vanilla mobile web UI", "node:test"];
   }
   if (appType === "web-app") {
-    return ["Node.js", "TypeScript", "vanilla web UI"];
+    return ["Node.js", "TypeScript", "vanilla web UI", "node:test"];
   }
-  return ["Node.js", "TypeScript", "fullstack web starter"];
+  return ["Node.js", "TypeScript", "fullstack web starter", "node:test"];
 }
 
 function detectFileLayout(appType: BuildBrief["appType"]): string[] {
@@ -158,6 +146,7 @@ function detectFileLayout(appType: BuildBrief["appType"]): string[] {
     "src/shared/contracts.ts",
     "src/lib/domain.ts",
     "tests/bootstrap.test.mjs",
+    "tests/contracts.test.mjs",
     "ops/README.md",
   ];
 

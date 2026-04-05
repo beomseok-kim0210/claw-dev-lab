@@ -1,3 +1,4 @@
+import { resolveGenerationProfile } from "../llm/modelProfiles.js";
 import { OllamaClient } from "../llm/ollamaClient.js";
 import { buildInfraDiscussionPrompt, buildInfraSpecPrompt } from "../prompts/infra.js";
 import type { ChatMessage } from "../types/chat.js";
@@ -17,13 +18,13 @@ export async function runInfraDiscussion(args: {
   messages: ChatMessage[];
 }): Promise<InfraDiscussion> {
   const prompt = buildInfraDiscussionPrompt(args.userRequest, args.messages);
+  const profile = resolveGenerationProfile(args.client.getModelName(), "discussion");
+
   try {
     return await args.client.generateStructured({
       ...prompt,
       schema: infraDiscussionSchema,
-      temperature: 0.1,
-      numPredict: 600,
-      maxRetries: 5,
+      ...profile,
     });
   } catch {
     return buildDeterministicInfraDiscussion(args);
@@ -37,13 +38,13 @@ export async function generateInfraSpec(args: {
   infraDiscussion: InfraDiscussion;
 }): Promise<InfraSpec> {
   const prompt = buildInfraSpecPrompt(args);
+  const profile = resolveGenerationProfile(args.client.getModelName(), "spec");
+
   try {
     return await args.client.generateStructured({
       ...prompt,
       schema: infraSpecSchema,
-      temperature: 0.1,
-      numPredict: 900,
-      maxRetries: 5,
+      ...profile,
     });
   } catch {
     return buildDeterministicInfraSpec(args);

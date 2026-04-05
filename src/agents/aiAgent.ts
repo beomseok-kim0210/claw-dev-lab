@@ -1,3 +1,4 @@
+import { resolveGenerationProfile } from "../llm/modelProfiles.js";
 import { OllamaClient } from "../llm/ollamaClient.js";
 import { buildAIDiscussionPrompt, buildAIFeaturesSpecPrompt } from "../prompts/ai.js";
 import type { ChatMessage } from "../types/chat.js";
@@ -17,13 +18,13 @@ export async function runAIDiscussion(args: {
   messages: ChatMessage[];
 }): Promise<AIDiscussion> {
   const prompt = buildAIDiscussionPrompt(args.userRequest, args.messages);
+  const profile = resolveGenerationProfile(args.client.getModelName(), "discussion");
+
   try {
     return await args.client.generateStructured({
       ...prompt,
       schema: aiDiscussionSchema,
-      temperature: 0.1,
-      numPredict: 600,
-      maxRetries: 5,
+      ...profile,
     });
   } catch {
     return buildDeterministicAIDiscussion(args);
@@ -37,13 +38,13 @@ export async function generateAIFeaturesSpec(args: {
   aiDiscussion: AIDiscussion;
 }): Promise<AIFeaturesSpec> {
   const prompt = buildAIFeaturesSpecPrompt(args);
+  const profile = resolveGenerationProfile(args.client.getModelName(), "spec");
+
   try {
     return await args.client.generateStructured({
       ...prompt,
       schema: aiFeaturesSpecSchema,
-      temperature: 0.1,
-      numPredict: 900,
-      maxRetries: 5,
+      ...profile,
     });
   } catch {
     return buildDeterministicAIFeaturesSpec(args);

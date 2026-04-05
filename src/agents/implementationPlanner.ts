@@ -1,3 +1,4 @@
+import { resolveGenerationProfile } from "../llm/modelProfiles.js";
 import { OllamaClient } from "../llm/ollamaClient.js";
 import { buildImplementationPlanPrompt } from "../prompts/implementation.js";
 import {
@@ -24,14 +25,13 @@ type ImplementationPlannerArgs = {
 
 export async function generateImplementationPlan(args: ImplementationPlannerArgs): Promise<ImplementationPlan> {
   const prompt = buildImplementationPlanPrompt(args);
+  const profile = resolveGenerationProfile(args.client.getModelName(), "implementation-plan");
 
   try {
     return await args.client.generateStructured({
       ...prompt,
       schema: implementationPlanSchema,
-      temperature: 0.1,
-      numPredict: 800,
-      maxRetries: 5,
+      ...profile,
     });
   } catch {
     return buildDeterministicImplementationPlan(args);
