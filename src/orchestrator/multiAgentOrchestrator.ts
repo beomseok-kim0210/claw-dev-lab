@@ -43,6 +43,7 @@ import type {
   OrchestrationHooks,
   OrchestrationPhaseKey,
   OrchestrationResult,
+  VerificationCheck,
 } from "../types/orchestration.js";
 import type { BuildBrief } from "../types/generation.js";
 import { ChatStateManager } from "./chatState.js";
@@ -394,12 +395,24 @@ export class MultiAgentOrchestrator {
           await this.emitMessage(chat.addAgentMessage(reviewer, formatImplementationReview(review)));
         }
 
-        if (reviews.every((item) => item.review.reactionType === "support")) {
+        const hasFailedVerification = latestVerificationChecks.some((check) => check.status === "failed");
+        if (reviews.every((item) => item.review.reactionType === "support") && !hasFailedVerification) {
           break;
         }
 
+        const pmInterventionMessage = chat.addAgentMessage(
+          "pm",
+          formatPmInterventionMessage(owner, reviewRound, reviews, latestVerificationChecks),
+        );
+        await this.emitMessage(pmInterventionMessage);
+
         if (reviewRound === MAX_CODE_REVIEW_ROUNDS) {
-          unresolvedReviewFindings.push(...reviews.flatMap((item) => item.review.findings));
+          unresolvedReviewFindings.push(
+            ...reviews.flatMap((item) => item.review.findings),
+            ...latestVerificationChecks
+              .filter((check) => check.status === "failed")
+              .map((check) => `Blocking: ${check.name} failed. ${check.summary}`),
+          );
           await this.emitMessage(chat.addAgentMessage("pm", formatRevisionStopMessage(owner, reviews)));
           break;
         }
@@ -718,6 +731,45 @@ function formatRevisionStopMessage(
     `Summary: ${englishRoleLabel(owner)} hit the maximum review rounds for this bundle.`,
     "Open Issues:",
     ...(blocking.length > 0 ? blocking.map((item) => `- ${item}`) : ["- No blocking issue remained, but the review loop reached its cap."]),
+  ].join("\n");
+}
+
+function formatPmInterventionMessage(
+  owner: DiscussionRole,
+  reviewRound: number,
+  reviews: Array<{ reviewer: DiscussionRole; review: ImplementationReview }>,
+  verificationChecks: VerificationCheck[],
+): string {
+  const blockingFindings = uniqueReviewLines(
+    reviews.flatMap((item) => item.review.findings.filter((finding) => finding.startsWith("Blocking:"))),
+  ).slice(0, 5);
+  const followUps = uniqueReviewLines(
+    reviews.flatMap((item) => item.review.findings.filter((finding) => finding.startsWith("Follow-up:"))),
+  ).slice(0, 4);
+  const failedChecks = verificationChecks.filter((check) => check.status === "failed").slice(0, 4);
+
+  return [
+    `Title: PM intervention after ${englishRoleLabel(owner)} review round ${reviewRound}`,
+    "Message Type: pm intervention",
+    `Summary: PM is forcing the next revision to resolve the highest-risk issues before the owner continues.`,
+    "Blocking Priorities:",
+    ...(
+      blockingFindings.length > 0
+        ? blockingFindings.map((item) => `- ${item}`)
+        : ["- No reviewer raised a blocking finding in this round."]
+    ),
+    "Verification Failures:",
+    ...(
+      failedChecks.length > 0
+        ? failedChecks.map((item) => `- ${item.name}: ${item.summary}`)
+        : ["- No failed verification check was reported in this round."]
+    ),
+    "Follow-up Queue:",
+    ...(followUps.length > 0 ? followUps.map((item) => `- ${item}`) : ["- No follow-up item remained after reviewer triage."]),
+    "PM Direction:",
+    `- ${englishRoleLabel(owner)} must fix blocking findings and failed verification checks first.`,
+    `- Only after those are cleared should ${englishRoleLabel(owner)} spend effort on follow-up polish items.`,
+    `- The next revision should keep already-approved areas intact while narrowing the delta to the listed issues only.`,
   ].join("\n");
 }
 
