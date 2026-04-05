@@ -83,7 +83,7 @@ export const clarificationQuestionSchema = z
   .object({
     id: z.string().regex(/^clarify-\d{2}$/),
     askedBy: z.enum(["pm", "backend", "frontend", "ai", "infra", "test"]),
-    topic: z.enum(["scope", "api", "data", "ui", "ai", "infra", "test"]),
+    topic: z.enum(["scope", "api", "data", "ui", "ai", "infra", "test", "credential", "auth", "integration", "approval"]),
     question: z.string().min(1),
     reason: z.string().min(1),
   })

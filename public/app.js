@@ -253,17 +253,13 @@ function renderProjectMemory(preview) {
 
   projectMemorySummary.textContent = summaryParts.join(" ");
   const lines = [];
-  if (preview.recentRequests?.length) {
-    lines.push(`<p class="memory-preview-heading">최근 요청</p>`);
-    lines.push(...preview.recentRequests.map((item) => `<p class="memory-preview-item">${escapeHtml(item)}</p>`));
-  }
   if (preview.workspacePreview?.length) {
     lines.push(`<p class="memory-preview-heading">기존 파일</p>`);
-    lines.push(...preview.workspacePreview.map((item) => `<p class="memory-preview-item mono">${escapeHtml(item)}</p>`));
+    lines.push(...preview.workspacePreview.slice(0, 4).map((item) => `<p class="memory-preview-item mono">${escapeHtml(item)}</p>`));
   }
   if (preview.unresolvedFindings?.length) {
     lines.push(`<p class="memory-preview-heading">남은 이슈</p>`);
-    lines.push(...preview.unresolvedFindings.map((item) => `<p class="memory-preview-item">${escapeHtml(item)}</p>`));
+    lines.push(...preview.unresolvedFindings.slice(0, 2).map((item) => `<p class="memory-preview-item">${escapeHtml(item)}</p>`));
   }
   projectMemoryPreview.innerHTML = lines.join("");
   updateSubmitLabel();
@@ -308,7 +304,7 @@ function renderPhases(phases) {
 
     const detail = document.createElement("p");
     detail.className = "phase-detail";
-    detail.textContent = phase.detail || detailForState(phase.state);
+    detail.textContent = compactPhaseDetail(phase);
 
     content.append(title, detail);
     li.append(dot, content);
@@ -365,7 +361,7 @@ function renderClarification(clarification, status) {
   }
 
   clarificationPanel.classList.remove("hidden");
-  clarificationSummary.textContent = clarification.summary;
+  clarificationSummary.textContent = clarification.summary || "실제 연동에 필요한 정보가 있어 확인이 필요합니다.";
 
   if (clarification.state === "answered") {
     clarificationForm.innerHTML = clarification.questions
@@ -373,9 +369,8 @@ function renderClarification(clarification, status) {
         const matched = clarification.answers.find((answer) => answer.questionId === question.id);
         return `
           <div class="clarification-question">
-            <div class="clarification-meta">${roleLabel(question.askedBy)} · ${topicLabel(question.topic)} · ${question.id}</div>
+            <div class="clarification-meta">${topicLabel(question.topic)} · ${question.id}</div>
             <p class="clarification-text">${escapeHtml(question.question)}</p>
-            <p class="clarification-reason">${escapeHtml(question.reason)}</p>
             <div class="clarification-answer">${escapeHtml(matched?.answer ?? "답변 없음")}</div>
           </div>
         `;
@@ -388,10 +383,9 @@ function renderClarification(clarification, status) {
     .map(
       (question) => `
         <label class="clarification-question" for="${question.id}">
-          <span class="clarification-meta">${roleLabel(question.askedBy)} · ${topicLabel(question.topic)} · ${question.id}</span>
+          <span class="clarification-meta">${topicLabel(question.topic)} · ${question.id}</span>
           <span class="clarification-text">${escapeHtml(question.question)}</span>
-          <span class="clarification-reason">${escapeHtml(question.reason)}</span>
-          <textarea class="clarification-input" id="${question.id}" data-question-id="${question.id}" placeholder="이 질문에 대한 답변을 입력하세요"></textarea>
+          <textarea class="clarification-input" id="${question.id}" data-question-id="${question.id}" placeholder="${questionPlaceholder(question.topic)}"></textarea>
         </label>
       `,
     )
@@ -590,7 +584,45 @@ function topicLabel(topic) {
   if (topic === "test") {
     return "테스트";
   }
+  if (topic === "credential") {
+    return "자격 정보";
+  }
+  if (topic === "auth") {
+    return "인증 설정";
+  }
+  if (topic === "integration") {
+    return "외부 연동";
+  }
+  if (topic === "approval") {
+    return "승인 필요";
+  }
   return "인프라";
+}
+
+function questionPlaceholder(topic) {
+  if (topic === "credential") {
+    return "예: DART API 키는 xxx 입니다";
+  }
+  if (topic === "auth") {
+    return "예: Google 로그인 사용, 콜백 도메인은 example.com";
+  }
+  if (topic === "integration") {
+    return "예: 실제 연동 대상은 DART 와 Google OAuth 입니다";
+  }
+  if (topic === "approval") {
+    return "예: 실제 외부 서비스 연동을 허용합니다";
+  }
+  return "필요한 정보만 간단히 적어주세요";
+}
+
+function compactPhaseDetail(phase) {
+  if (phase.state === "active" || phase.state === "failed") {
+    return phase.detail || detailForState(phase.state);
+  }
+  if (phase.state === "completed") {
+    return "완료";
+  }
+  return "대기";
 }
 
 function renderDecision(transcript, error) {

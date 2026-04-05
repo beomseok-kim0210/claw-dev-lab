@@ -31,7 +31,7 @@
       <section class="panel composer-panel">
         <div class="panel-head">
           <p class="eyebrow">요청 입력</p>
-          <h2>기획을 시작할 요청을 넣으세요</h2>
+          <h2>무엇을 만들지 적어주세요</h2>
         </div>
 
         <label class="field-label" for="requestInput">사용자 요청</label>
@@ -79,7 +79,7 @@
         <div class="phase-card">
           <div class="panel-head compact">
             <p class="eyebrow">진행 흐름</p>
-            <h3>PM 시작 → 자유 토론 → 추가 확인 → PM 결정 → 명세 → 구현</h3>
+            <h3>토론 → 필요한 확인 → 구현</h3>
           </div>
           <ol class="phase-list" id="phaseList"></ol>
         </div>
@@ -96,26 +96,18 @@
 
         <div class="clarification-card hidden" id="clarificationPanel">
           <div class="panel-head compact">
-            <p class="eyebrow">사용자 확인</p>
-            <h3>질문이 생기면 여기서 답변합니다</h3>
+            <p class="eyebrow">필수 입력</p>
+            <h3>외부 연동에 필요한 정보만 묻습니다</h3>
           </div>
           <p class="clarification-summary" id="clarificationSummary"></p>
           <form class="clarification-form" id="clarificationForm"></form>
-        </div>
-
-        <div class="note-card">
-          <p class="note-title">현재 구조</p>
-          <p class="note-body">
-            PM이 먼저 문제를 정의하고, 백엔드·프론트엔드·AI·인프라가 중간 토론을 이어갑니다.
-            애매한 부분은 사용자에게 다시 묻고, 답변이 들어오면 같은 세션에서 그대로 설계와 코드 생성이 이어집니다.
-          </p>
         </div>
       </section>
 
       <section class="panel chat-panel">
         <div class="panel-head">
           <p class="eyebrow">공유 채팅방</p>
-          <h2>주장, 반박, 보완, 구현 메시지가 실시간으로 쌓입니다</h2>
+          <h2>에이전트 대화와 리뷰가 실시간으로 쌓입니다</h2>
         </div>
         <div class="chat-stream" id="chatStream">
           <div class="empty-state">
@@ -129,7 +121,7 @@
       <aside class="panel output-panel">
         <div class="panel-head">
           <p class="eyebrow">산출물</p>
-          <h2>명세, 구현 계획, 생성 코드</h2>
+          <h2>결정, 문서, 코드</h2>
         </div>
 
         <div class="decision-card">
