@@ -88,6 +88,14 @@ export type CodeActivityUpdate = {
   timestamp: string;
 };
 
+export type VerificationCheck = {
+  name: string;
+  command: string;
+  status: "passed" | "failed" | "skipped";
+  summary: string;
+  outputSnippet?: string;
+};
+
 export type OrchestrationHooks = {
   onMessage?: (message: ChatMessage) => void | Promise<void>;
   onPhase?: (phase: OrchestrationPhaseUpdate) => void | Promise<void>;

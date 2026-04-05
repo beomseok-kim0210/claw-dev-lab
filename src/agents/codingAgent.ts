@@ -1,3 +1,6 @@
+import { resolveGenerationProfile } from "../llm/modelProfiles.js";
+import { OllamaClient } from "../llm/ollamaClient.js";
+import { buildImplementationReviewPrompt } from "../prompts/coding.js";
 import type { AgentRole, ChatMessage } from "../types/chat.js";
 import type {
   AIFeaturesSpec,
@@ -9,7 +12,8 @@ import type {
   InfraSpec,
   TestSpec,
 } from "../types/contracts.js";
-import type { GeneratedArtifact } from "../types/orchestration.js";
+import { implementationReviewSchema as implementationReviewResponseSchema } from "../types/contracts.js";
+import type { GeneratedArtifact, VerificationCheck } from "../types/orchestration.js";
 
 type CodingRole = Exclude<AgentRole, "pm">;
 
@@ -53,16 +57,55 @@ export async function runImplementationUpdate(args: {
 }
 
 export async function runImplementationReview(args: {
-  client?: unknown;
+  client?: OllamaClient;
   role: CodingRole;
-  userRequest?: string;
+  userRequest: string;
   messages: ChatMessage[];
   targetMessage: ChatMessage;
   targetFiles: string[];
   generatedArtifacts: GeneratedArtifact[];
+  verificationChecks?: VerificationCheck[];
 }): Promise<ImplementationReview> {
-  const approvedAreas = buildApprovedAreas(args.role, args.generatedArtifacts);
-  const findings = buildFindings(args.role, args.generatedArtifacts);
+  if (args.client) {
+    const prompt = buildImplementationReviewPrompt({
+      role: args.role,
+      userRequest: args.userRequest,
+      messages: args.messages,
+      targetMessage: args.targetMessage,
+      targetFiles: args.targetFiles,
+      generatedArtifacts: args.generatedArtifacts,
+      verificationChecks: args.verificationChecks ?? [],
+    });
+    const profile = resolveGenerationProfile(args.client.getModelName(), "code-review");
+
+    try {
+      const generated = await args.client.generateStructured({
+        ...prompt,
+        schema: implementationReviewResponseSchema,
+        ...profile,
+      });
+      return normalizeImplementationReview(generated, args);
+    } catch {
+      return buildFallbackImplementationReview(args);
+    }
+  }
+
+  return buildFallbackImplementationReview(args);
+}
+
+function buildFallbackImplementationReview(args: {
+  role: CodingRole;
+  messages: ChatMessage[];
+  targetMessage: ChatMessage;
+  targetFiles: string[];
+  generatedArtifacts: GeneratedArtifact[];
+  verificationChecks?: VerificationCheck[];
+}): ImplementationReview {
+  const approvedAreas = appendVerificationApprovals(
+    buildApprovedAreas(args.role, args.generatedArtifacts),
+    args.verificationChecks ?? [],
+  );
+  const findings = buildFindings(args.role, args.generatedArtifacts, args.verificationChecks ?? []);
   const reactionType = deriveReactionType(findings);
 
   return {
@@ -117,6 +160,38 @@ export function formatImplementationReview(review: ImplementationReview): string
     `Adjustment: ${review.adjustment}`,
     `References: ${review.references.join(", ")}`,
   ].join("\n");
+}
+
+function normalizeImplementationReview(
+  review: ImplementationReview,
+  args: {
+    role: CodingRole;
+    messages: ChatMessage[];
+    targetMessage: ChatMessage;
+    targetFiles: string[];
+    generatedArtifacts: GeneratedArtifact[];
+    verificationChecks?: VerificationCheck[];
+  },
+): ImplementationReview {
+  const fallback = buildFallbackImplementationReview(args);
+  return {
+    ...review,
+    targetMessageId: args.targetMessage.id,
+    targetFiles: args.targetFiles,
+    approvedAreas: takeAtLeast(
+      review.approvedAreas.length > 0 ? review.approvedAreas : fallback.approvedAreas,
+      1,
+      fallback.approvedAreas[0] ?? "코드 번들이 비어 있지 않습니다.",
+    ).slice(0, 5),
+    findings: takeAtLeast(
+      review.findings.length > 0 ? review.findings : fallback.findings,
+      1,
+      fallback.findings[0] ?? "No blocking issue was found in the reviewed bundle.",
+    ).slice(0, 5),
+    assessment: review.assessment.trim().length > 0 ? review.assessment : fallback.assessment,
+    adjustment: review.adjustment.trim().length > 0 ? review.adjustment : fallback.adjustment,
+    references: review.references.length > 0 ? review.references : fallback.references,
+  };
 }
 
 function buildApprovedAreas(role: CodingRole, artifacts: GeneratedArtifact[]): string[] {
@@ -181,7 +256,17 @@ function buildApprovedAreas(role: CodingRole, artifacts: GeneratedArtifact[]): s
   return unique(approved);
 }
 
-function buildFindings(role: CodingRole, artifacts: GeneratedArtifact[]): string[] {
+function appendVerificationApprovals(approvedAreas: string[], verificationChecks: VerificationCheck[]): string[] {
+  const next = [...approvedAreas];
+  for (const check of verificationChecks) {
+    if (check.status === "passed") {
+      next.push(`Verification passed: ${check.name}. ${check.summary}`);
+    }
+  }
+  return unique(next).slice(0, 5);
+}
+
+function buildFindings(role: CodingRole, artifacts: GeneratedArtifact[], verificationChecks: VerificationCheck[]): string[] {
   const findings: string[] = [];
 
   for (const artifact of artifacts) {
@@ -252,6 +337,15 @@ function buildFindings(role: CodingRole, artifacts: GeneratedArtifact[]): string
     }
     if (!hasContent(artifacts, "package.json", "\"test\"")) {
       findings.push("Follow-up: expose a test script in package.json so the generated suite is easy to run.");
+    }
+  }
+
+  for (const check of verificationChecks) {
+    if (check.status === "failed") {
+      findings.push(`Blocking: verification failed in ${check.name}. ${check.summary}`);
+    }
+    if (check.status === "skipped" && role === "test") {
+      findings.push(`Follow-up: ${check.name} was skipped. ${check.summary}`);
     }
   }
 

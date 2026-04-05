@@ -55,6 +55,7 @@ import {
   loadWorkspaceContextFiles,
   persistProjectMemory,
 } from "./projectMemory.js";
+import { formatVerificationReport, runWorkspaceVerification } from "./workspaceVerifier.js";
 
 type MultiAgentOrchestratorArgs = {
   client: OllamaClient;
@@ -366,6 +367,13 @@ export class MultiAgentOrchestrator {
 
       let latestArtifacts = writtenCodeArtifacts;
       let latestTargetMessage = updateMessage;
+      let latestTargetFiles = targetFiles;
+      let latestVerificationChecks = await runWorkspaceVerification({
+        projectRoot: this.projectRootDir,
+        generatedArtifacts: latestArtifacts,
+        toolingRoot: process.cwd(),
+      });
+      await this.emitMessage(chat.addAgentMessage("test", formatVerificationReport(owner, latestVerificationChecks)));
       const reviewers = codingOrder.filter((role) => role !== owner);
 
       for (let reviewRound = 1; reviewRound <= MAX_CODE_REVIEW_ROUNDS && reviewers.length > 0; reviewRound += 1) {
@@ -378,8 +386,9 @@ export class MultiAgentOrchestrator {
             userRequest,
             messages: chat.getMessages(),
             targetMessage: latestTargetMessage,
-            targetFiles,
+            targetFiles: latestTargetFiles,
             generatedArtifacts: latestArtifacts,
+            verificationChecks: latestVerificationChecks,
           });
           reviews.push({ reviewer, review });
           await this.emitMessage(chat.addAgentMessage(reviewer, formatImplementationReview(review)));
@@ -471,6 +480,13 @@ export class MultiAgentOrchestrator {
           ...workspaceFiles,
           ...latestArtifacts.map((artifact) => stripCodePrefix(artifact.filename, this.codePathPrefix)),
         ]);
+        latestTargetFiles = revisedTargetFiles;
+        latestVerificationChecks = await runWorkspaceVerification({
+          projectRoot: this.projectRootDir,
+          generatedArtifacts: latestArtifacts,
+          toolingRoot: process.cwd(),
+        });
+        await this.emitMessage(chat.addAgentMessage("test", formatVerificationReport(owner, latestVerificationChecks)));
       }
     }
 
