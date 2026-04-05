@@ -6,14 +6,13 @@ import {
   planClarification,
 } from "../agents/clarificationAgent.js";
 import { generateBuildBrief } from "../agents/buildBriefAgent.js";
-import { generateCodeBundle } from "../agents/codegenAgent.js";
+import { generateCodeBundle, reviseCodeBundle } from "../agents/codegenAgent.js";
 import {
   formatImplementationReview,
   formatImplementationUpdate,
   runImplementationReview,
   runImplementationUpdate,
 } from "../agents/codingAgent.js";
-import { buildFallbackCodeBundle } from "../agents/codeScaffolder.js";
 import { formatFrontendDiscussion, generateFrontendSpec, runFrontendDiscussion } from "../agents/frontendAgent.js";
 import { formatInfraDiscussion, generateInfraSpec, runInfraDiscussion } from "../agents/infraAgent.js";
 import { generateImplementationPlan } from "../agents/implementationPlanner.js";
@@ -48,6 +47,14 @@ import type {
 import type { BuildBrief } from "../types/generation.js";
 import { ChatStateManager } from "./chatState.js";
 import { writeArtifacts, writeExecutionArtifacts } from "./outputWriter.js";
+import path from "node:path";
+import {
+  formatProjectMemoryMessage,
+  listWorkspaceFiles,
+  loadProjectMemory,
+  loadWorkspaceContextFiles,
+  persistProjectMemory,
+} from "./projectMemory.js";
 
 type MultiAgentOrchestratorArgs = {
   client: OllamaClient;
@@ -65,6 +72,7 @@ export class MultiAgentOrchestrator {
   private readonly outputDir: string;
   private readonly codeOutputDir: string;
   private readonly codePathPrefix: string;
+  private readonly projectRootDir: string;
   private readonly hooks: OrchestrationHooks | undefined;
 
   constructor(args: MultiAgentOrchestratorArgs) {
@@ -72,16 +80,23 @@ export class MultiAgentOrchestrator {
     this.outputDir = args.outputDir;
     this.codeOutputDir = args.codeOutputDir ?? args.outputDir;
     this.codePathPrefix = args.codePathPrefix ?? (args.codeOutputDir ? "" : "generated-app");
+    this.projectRootDir = this.codePathPrefix ? path.resolve(this.codeOutputDir, this.codePathPrefix) : this.codeOutputDir;
     this.hooks = args.hooks;
   }
 
   async run(userRequest: string): Promise<OrchestrationResult> {
     const chat = new ChatStateManager();
+    const projectMemory = await loadProjectMemory(this.projectRootDir);
+    let workspaceFiles = await listWorkspaceFiles(this.projectRootDir).catch(() => [] as string[]);
     const userMessage = chat.addUserRequest(userRequest);
     await this.emitMessage(userMessage);
     await this.emitPhase("user", "사용자 요청", "completed", "공유 채팅방에 새로운 요청이 등록되었습니다.");
 
     await this.emitPhase("pm-initial", "PM 문제 정의", "active", "PM이 문제 정의와 MVP 범위를 정리하고 있습니다.");
+    if (projectMemory) {
+      await this.emitMessage(chat.addAgentMessage("pm", formatProjectMemoryMessage(projectMemory)));
+    }
+
     const pmInitial = await runPmInitialDiscussion({
       client: this.client,
       userRequest,
@@ -268,6 +283,7 @@ export class MultiAgentOrchestrator {
     );
     const codingOrder = discussionOrder.filter((role) => codingTaskMap.has(role));
     let codeArtifacts: GeneratedArtifact[] = [];
+    const unresolvedReviewFindings: string[] = [];
 
     for (let index = 0; index < codingOrder.length; index += 1) {
       const owner = codingOrder[index];
@@ -276,9 +292,13 @@ export class MultiAgentOrchestrator {
         continue;
       }
 
-      const existingFiles = artifacts
-        .map((artifact) => artifact.filename)
-        .filter((filename) => !filename.endsWith(".md"));
+      const existingFiles = uniqueCodePaths([
+        ...workspaceFiles,
+        ...artifacts
+          .map((artifact) => stripCodePrefix(artifact.filename, this.codePathPrefix))
+          .filter((filename) => filename.length > 0 && !filename.endsWith(".md")),
+      ]);
+      const workspaceContextFiles = await loadWorkspaceContextFiles(this.projectRootDir, owner);
       const bundle = await generateCodeBundle({
         client: this.client,
         role: owner,
@@ -287,6 +307,7 @@ export class MultiAgentOrchestrator {
         buildBrief,
         task,
         existingFiles,
+        workspaceContextFiles,
       });
       const targetFiles = bundle.files.map((file) => withCodePrefix(file.path, this.codePathPrefix));
       await this.emitCodeActivity({
@@ -338,6 +359,10 @@ export class MultiAgentOrchestrator {
         },
       );
       codeArtifacts = mergeArtifacts(codeArtifacts, writtenCodeArtifacts);
+      workspaceFiles = uniqueCodePaths([
+        ...workspaceFiles,
+        ...writtenCodeArtifacts.map((artifact) => stripCodePrefix(artifact.filename, this.codePathPrefix)),
+      ]);
 
       let latestArtifacts = writtenCodeArtifacts;
       let latestTargetMessage = updateMessage;
@@ -365,20 +390,42 @@ export class MultiAgentOrchestrator {
         }
 
         if (reviewRound === MAX_CODE_REVIEW_ROUNDS) {
+          unresolvedReviewFindings.push(...reviews.flatMap((item) => item.review.findings));
           await this.emitMessage(chat.addAgentMessage("pm", formatRevisionStopMessage(owner, reviews)));
           break;
         }
 
-        const revisedArtifacts = buildRevisedArtifacts({
-          owner,
+        const revisionBundle = await reviseCodeBundle({
+          client: this.client,
+          role: owner,
           userRequest,
           messages: chat.getMessages(),
           buildBrief,
           task,
-          existingFiles,
-          currentArtifacts: latestArtifacts,
-          codePathPrefix: this.codePathPrefix,
+          existingFiles: uniqueCodePaths([
+            ...existingFiles,
+            ...workspaceFiles,
+            ...latestArtifacts.map((artifact) => stripCodePrefix(artifact.filename, this.codePathPrefix)),
+          ]),
+          currentFiles: latestArtifacts.map((artifact) => ({
+            path: stripCodePrefix(artifact.filename, this.codePathPrefix),
+            purpose: "Current owner file before the latest revision round.",
+            content: artifact.content,
+          })),
+          reviews: reviews.map((item) => ({
+            reviewer: item.reviewer,
+            reactionType: item.review.reactionType,
+            approvedAreas: item.review.approvedAreas,
+            findings: item.review.findings,
+            adjustment: item.review.adjustment,
+          })),
+          workspaceContextFiles: await loadWorkspaceContextFiles(this.projectRootDir, owner),
         });
+        const revisedArtifacts = revisionBundle.files.map((file) => ({
+          filename: withCodePrefix(file.path, this.codePathPrefix),
+          absolutePath: "",
+          content: file.content,
+        }));
         const revisionMessage = chat.addAgentMessage(
           owner,
           formatRevisionUpdateMessage(owner, reviewRound, reviews, revisedArtifacts),
@@ -420,15 +467,31 @@ export class MultiAgentOrchestrator {
           },
         );
         codeArtifacts = mergeArtifacts(codeArtifacts, latestArtifacts);
+        workspaceFiles = uniqueCodePaths([
+          ...workspaceFiles,
+          ...latestArtifacts.map((artifact) => stripCodePrefix(artifact.filename, this.codePathPrefix)),
+        ]);
       }
     }
 
     await this.emitMessage(chat.addAgentMessage("pm", formatCodingWrapUpMessage(codeArtifacts)));
     await this.emitPhase("coding", "코드 구현", "completed", "역할별 코드 생성과 상호 리뷰가 마무리되었습니다.");
 
-      return {
-        userRequest,
-        transcript: chat.getMessages(),
+    workspaceFiles = await listWorkspaceFiles(this.projectRootDir).catch(() => workspaceFiles);
+    await persistProjectMemory({
+      projectRoot: this.projectRootDir,
+      userRequest,
+      finalDecision: pmFinal,
+      buildBrief,
+      implementationPlan,
+      artifactFiles: codeArtifacts.map((artifact) => artifact.filename),
+      workspaceFiles,
+      unresolvedFindings: uniqueReviewLines(unresolvedReviewFindings),
+    });
+
+    return {
+      userRequest,
+      transcript: chat.getMessages(),
       discussion: {
         pmInitial,
         backend,
@@ -642,36 +705,24 @@ function formatRevisionStopMessage(
   ].join("\n");
 }
 
-function buildRevisedArtifacts(args: {
-  owner: DiscussionRole;
-  userRequest: string;
-  messages: ChatMessage[];
-  buildBrief: BuildBrief;
-  task: ImplementationPlan["tasks"][number];
-  existingFiles: string[];
-  currentArtifacts: GeneratedArtifact[];
-  codePathPrefix: string;
-}): GeneratedArtifact[] {
-  const fallbackBundle = buildFallbackCodeBundle({
-    role: args.owner,
-    userRequest: args.userRequest,
-    messages: args.messages,
-    buildBrief: args.buildBrief,
-    task: args.task,
-    existingFiles: args.existingFiles,
-  });
-  const fallbackMap = new Map(
-    fallbackBundle.files.map((file) => [withCodePrefix(file.path, args.codePathPrefix), file.content] as const),
-  );
-
-  return args.currentArtifacts.map((artifact) => ({
-    ...artifact,
-    content: fallbackMap.get(artifact.filename) ?? artifact.content,
-  }));
-}
-
 function uniqueReviewLines(items: string[]): string[] {
   return items.filter((item, index) => item.trim().length > 0 && items.indexOf(item) === index);
+}
+
+function uniqueCodePaths(items: string[]): string[] {
+  return items.filter((item, index) => item.trim().length > 0 && items.indexOf(item) === index);
+}
+
+function stripCodePrefix(filename: string, codePathPrefix: string): string {
+  if (!codePathPrefix) {
+    return filename.replaceAll("\\", "/");
+  }
+  const normalizedPrefix = codePathPrefix.replaceAll("\\", "/").replace(/[\\/]+$/u, "");
+  const normalizedFilename = filename.replaceAll("\\", "/");
+  if (!normalizedFilename.startsWith(`${normalizedPrefix}/`)) {
+    return normalizedFilename;
+  }
+  return normalizedFilename.slice(normalizedPrefix.length + 1);
 }
 
 function englishRoleLabel(role: DiscussionRole): string {

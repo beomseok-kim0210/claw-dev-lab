@@ -1,6 +1,6 @@
 import type { AgentRole, ChatMessage } from "../types/chat.js";
 import type { ImplementationPlan } from "../types/contracts.js";
-import type { BuildBrief } from "../types/generation.js";
+import type { BuildBrief, GeneratedCodeFile } from "../types/generation.js";
 import { buildHarnessPrompt } from "./shared.js";
 
 type CodingRole = Exclude<AgentRole, "pm">;
@@ -12,6 +12,7 @@ export function buildCodeBundlePrompt(args: {
   buildBrief: BuildBrief;
   task: ImplementationPlan["tasks"][number];
   existingFiles: string[];
+  workspaceContextFiles?: Array<{ path: string; content: string }>;
 }): {
   systemPrompt: string;
   userPrompt: string;
@@ -45,9 +46,17 @@ export function buildCodeBundlePrompt(args: {
         ],
       },
       {
-        title: "Already Generated Files",
+        title: "Known Workspace Files",
         lines: args.existingFiles.length > 0 ? args.existingFiles.map((item) => `- ${item}`) : ["- none"],
       },
+      ...(args.workspaceContextFiles && args.workspaceContextFiles.length > 0
+        ? [
+            {
+              title: "Relevant Existing File Contents",
+              lines: renderWorkspaceContext(args.workspaceContextFiles),
+            },
+          ]
+        : []),
     ],
     contract: {
       schemaLines: [
@@ -64,7 +73,106 @@ export function buildCodeBundlePrompt(args: {
       ],
       constraints: [
         "Return real files only.",
-        "Never overwrite a file that already exists in the generated list.",
+        "Do not return the same path twice in one bundle.",
+        "You may update an existing workspace file when it is relevant to the assigned task.",
+        "Do not use TODO, placeholder, or omitted sections.",
+        "Use only Node.js built-ins and browser-native APIs. Do not add third-party runtime libraries.",
+        "If you write TypeScript imports, use explicit .js extensions for relative imports.",
+      ],
+    },
+  });
+}
+
+export function buildCodeRevisionPrompt(args: {
+  role: CodingRole;
+  userRequest: string;
+  messages: ChatMessage[];
+  buildBrief: BuildBrief;
+  task: ImplementationPlan["tasks"][number];
+  existingFiles: string[];
+  currentFiles: GeneratedCodeFile[];
+  reviews: Array<{
+    reviewer: CodingRole;
+    reactionType: "challenge" | "support" | "refine";
+    approvedAreas: string[];
+    findings: string[];
+    adjustment: string;
+  }>;
+  workspaceContextFiles?: Array<{ path: string; content: string }>;
+}): {
+  systemPrompt: string;
+  userPrompt: string;
+} {
+  return buildHarnessPrompt({
+    role: args.role,
+    mode: "implementation",
+    objective: `${roleLabel(args.role)} must revise the current file bundle using concrete review feedback instead of regenerating from scratch.`,
+    responsibilities: [
+      ...roleResponsibilities(args.role),
+      "Treat the current owner files as the baseline implementation.",
+      "Fix every blocking finding unless the file content already proves the finding wrong.",
+      "Return the files that should exist after the revision round.",
+    ],
+    userRequest: args.userRequest,
+    messages: args.messages,
+    contextBlocks: [
+      {
+        title: "Build Brief",
+        lines: [
+          `- appName: ${args.buildBrief.appName}`,
+          `- appType: ${args.buildBrief.appType}`,
+          `- primaryGoal: ${args.buildBrief.primaryGoal}`,
+          ...args.buildBrief.keyFeatures.map((item) => `- feature: ${item}`),
+        ],
+      },
+      {
+        title: "Assigned Task",
+        lines: [
+          `- taskId: ${args.task.id}`,
+          `- title: ${args.task.title}`,
+          `- goal: ${args.task.goal}`,
+          ...args.task.deliverables.map((item) => `- deliverable: ${item}`),
+        ],
+      },
+      {
+        title: "Review Feedback",
+        lines: renderReviewContext(args.reviews),
+      },
+      {
+        title: "Current Owner Files",
+        lines: renderCurrentFiles(args.currentFiles),
+      },
+      {
+        title: "Known Workspace Files",
+        lines: args.existingFiles.length > 0 ? args.existingFiles.map((item) => `- ${item}`) : ["- none"],
+      },
+      ...(args.workspaceContextFiles && args.workspaceContextFiles.length > 0
+        ? [
+            {
+              title: "Relevant Existing File Contents",
+              lines: renderWorkspaceContext(args.workspaceContextFiles),
+            },
+          ]
+        : []),
+    ],
+    contract: {
+      schemaLines: [
+        `  "role": "${args.role}",`,
+        '  "summary": "Short summary of the revised file bundle",',
+        '  "files": [',
+        "    {",
+        '      "path": "src/server.ts",',
+        '      "purpose": "Why this file exists after the revision",',
+        '      "content": "The full revised file content"',
+        "    }",
+        "  ],",
+        '  "validation": ["how the revision addressed the review"]',
+      ],
+      constraints: [
+        "Use the current owner files as the baseline and revise them concretely.",
+        "Address blocking findings before optional polish items.",
+        "Do not return duplicate file paths.",
+        "You may keep a file unchanged if it already satisfies the review, but the returned bundle must still reflect the final state.",
         "Do not use TODO, placeholder, or omitted sections.",
         "Use only Node.js built-ins and browser-native APIs. Do not add third-party runtime libraries.",
         "If you write TypeScript imports, use explicit .js extensions for relative imports.",
@@ -127,4 +235,34 @@ function roleResponsibilities(role: CodingRole): string[] {
     "Keep the logic deterministic and easy for the server or UI to consume.",
     "Avoid vague recommendation text that does not connect back to the request.",
   ];
+}
+
+function renderWorkspaceContext(files: Array<{ path: string; content: string }>): string[] {
+  return files.flatMap((file) => [`- path: ${file.path}`, ...file.content.split("\n").map((line) => `  ${line}`)]);
+}
+
+function renderCurrentFiles(files: GeneratedCodeFile[]): string[] {
+  return files.flatMap((file) => [
+    `- path: ${file.path}`,
+    `  purpose: ${file.purpose}`,
+    ...file.content.split("\n").map((line) => `  ${line}`),
+  ]);
+}
+
+function renderReviewContext(
+  reviews: Array<{
+    reviewer: CodingRole;
+    reactionType: "challenge" | "support" | "refine";
+    approvedAreas: string[];
+    findings: string[];
+    adjustment: string;
+  }>,
+): string[] {
+  return reviews.flatMap((review) => [
+    `- reviewer: ${roleLabel(review.reviewer)}`,
+    `  reactionType: ${review.reactionType}`,
+    ...review.approvedAreas.map((item) => `  approved: ${item}`),
+    ...review.findings.map((item) => `  finding: ${item}`),
+    `  adjustment: ${review.adjustment}`,
+  ]);
 }

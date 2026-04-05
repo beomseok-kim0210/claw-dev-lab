@@ -3,8 +3,8 @@ import path from "node:path";
 
 import { resolveGenerationProfile } from "../llm/modelProfiles.js";
 import { OllamaClient } from "../llm/ollamaClient.js";
-import { buildCodeBundlePrompt } from "../prompts/codegen.js";
-import type { AgentRole, ChatMessage } from "../types/chat.js";
+import { buildCodeBundlePrompt, buildCodeRevisionPrompt } from "../prompts/codegen.js";
+import type { ChatMessage } from "../types/chat.js";
 import type { ImplementationPlan } from "../types/contracts.js";
 import {
   type BuildBrief,
@@ -13,8 +13,7 @@ import {
   generatedCodeBundleSchema,
 } from "../types/generation.js";
 import { buildFallbackCodeBundle, listFallbackProjectPaths } from "./codeScaffolder.js";
-
-type CodingRole = Exclude<AgentRole, "pm">;
+import { isAllowedRolePath, normalizeGeneratedPath, type CodingRole } from "./codegenPaths.js";
 
 const BUILTIN_IMPORTS = new Set(
   builtinModules.flatMap((item) => (item.startsWith("node:") ? [item, item.slice(5)] : [item, `node:${item}`])),
@@ -30,6 +29,7 @@ export async function generateCodeBundle(args: {
   buildBrief: BuildBrief;
   task: ImplementationPlan["tasks"][number];
   existingFiles: string[];
+  workspaceContextFiles?: Array<{ path: string; content: string }>;
 }): Promise<GeneratedCodeBundle> {
   const prompt = buildCodeBundlePrompt(args);
   const profile = resolveGenerationProfile(args.client.getModelName(), "codegen");
@@ -47,6 +47,40 @@ export async function generateCodeBundle(args: {
   }
 }
 
+export async function reviseCodeBundle(args: {
+  client: OllamaClient;
+  role: CodingRole;
+  userRequest: string;
+  messages: ChatMessage[];
+  buildBrief: BuildBrief;
+  task: ImplementationPlan["tasks"][number];
+  existingFiles: string[];
+  currentFiles: GeneratedCodeFile[];
+  reviews: Array<{
+    reviewer: CodingRole;
+    reactionType: "challenge" | "support" | "refine";
+    approvedAreas: string[];
+    findings: string[];
+    adjustment: string;
+  }>;
+  workspaceContextFiles?: Array<{ path: string; content: string }>;
+}): Promise<GeneratedCodeBundle> {
+  const prompt = buildCodeRevisionPrompt(args);
+  const profile = resolveGenerationProfile(args.client.getModelName(), "codegen");
+
+  try {
+    const generated = await args.client.generateStructured({
+      ...prompt,
+      schema: generatedCodeBundleSchema,
+      ...profile,
+    });
+
+    return normalizeRevisionBundle(args, generated);
+  } catch {
+    return buildCurrentBundle(args.role, args.currentFiles, args.reviews);
+  }
+}
+
 function normalizeBundle(
   args: {
     role: CodingRole;
@@ -55,21 +89,21 @@ function normalizeBundle(
     buildBrief: BuildBrief;
     task: ImplementationPlan["tasks"][number];
     existingFiles: string[];
+    workspaceContextFiles?: Array<{ path: string; content: string }>;
   },
   bundle: GeneratedCodeBundle,
 ): GeneratedCodeBundle {
   const normalizedFiles = bundle.files.map((file) => ({
     ...file,
-    path: normalizePath(file.path),
+    path: normalizeGeneratedPath(file.path),
   }));
 
   const hasDuplicatePath = normalizedFiles.some(
     (file, index) => normalizedFiles.findIndex((candidate) => candidate.path === file.path) !== index,
   );
-  const hasConflict = normalizedFiles.some((file) => args.existingFiles.includes(file.path));
-  const hasInvalidPath = normalizedFiles.some((file) => !isAllowedRolePath(args.role, file));
+  const hasInvalidPath = normalizedFiles.some((file) => !isAllowedRolePath(args.role, file.path));
 
-  if (hasDuplicatePath || hasConflict || hasInvalidPath) {
+  if (hasDuplicatePath || hasInvalidPath) {
     return buildFallbackCodeBundle(args);
   }
 
@@ -84,50 +118,6 @@ function normalizeBundle(
   }
 
   return rewritten;
-}
-
-function normalizePath(filePath: string): string {
-  return filePath.replaceAll("\\", "/").replace(/^\.?\//u, "");
-}
-
-function isAllowedRolePath(role: CodingRole, file: GeneratedCodeFile): boolean {
-  const filePath = file.path;
-
-  if (role === "backend") {
-    return (
-      filePath === "package.json" ||
-      filePath === "tsconfig.json" ||
-      filePath.startsWith("src/server") ||
-      filePath.startsWith("src/shared/") ||
-      filePath.startsWith("src/data/") ||
-      filePath.startsWith("src/routes/") ||
-      filePath.startsWith("src/api/")
-    );
-  }
-
-  if (role === "frontend") {
-    return (
-      filePath.startsWith("public/") ||
-      filePath.startsWith("src/client/") ||
-      filePath.startsWith("src/ui/") ||
-      filePath.startsWith("src/browser/")
-    );
-  }
-
-  if (role === "ai") {
-    return filePath.startsWith("src/lib/") || filePath.startsWith("src/ai/");
-  }
-
-  if (role === "test") {
-    return filePath.startsWith("tests/") || filePath.startsWith("src/test/");
-  }
-
-  return (
-    filePath === ".env.example" ||
-    filePath === "Dockerfile" ||
-    filePath === "docker-compose.yml" ||
-    filePath.startsWith("ops/")
-  );
 }
 
 function hydrateBundle(
@@ -165,7 +155,7 @@ function rewriteBundleRelativeImports(
   bundle: GeneratedCodeBundle,
 ): GeneratedCodeBundle {
   const knownPaths = new Set<string>([
-    ...args.existingFiles.map((item) => normalizePath(item)),
+    ...args.existingFiles.map((item) => normalizeGeneratedPath(item)),
     ...listFallbackProjectPaths(),
     ...bundle.files.map((file) => file.path),
   ]);
@@ -205,6 +195,62 @@ function rewriteRelativeImports(file: GeneratedCodeFile, knownPaths: Set<string>
     ...file,
     content,
   };
+}
+
+function normalizeRevisionBundle(
+  args: {
+    role: CodingRole;
+    existingFiles: string[];
+    currentFiles: GeneratedCodeFile[];
+    reviews: Array<{
+      reviewer: CodingRole;
+      reactionType: "challenge" | "support" | "refine";
+      approvedAreas: string[];
+      findings: string[];
+      adjustment: string;
+    }>;
+  },
+  bundle: GeneratedCodeBundle,
+): GeneratedCodeBundle {
+  const normalizedFiles = bundle.files.map((file) => ({
+    ...file,
+    path: normalizeGeneratedPath(file.path),
+  }));
+
+  const hasDuplicatePath = normalizedFiles.some(
+    (file, index) => normalizedFiles.findIndex((candidate) => candidate.path === file.path) !== index,
+  );
+  const hasInvalidPath = normalizedFiles.some((file) => !isAllowedRolePath(args.role, file.path));
+
+  if (hasDuplicatePath || hasInvalidPath) {
+    return buildCurrentBundle(args.role, args.currentFiles, args.reviews);
+  }
+
+  const merged = new Map<string, GeneratedCodeFile>();
+  for (const file of args.currentFiles) {
+    merged.set(file.path, file);
+  }
+  for (const file of normalizedFiles) {
+    merged.set(file.path, file);
+  }
+
+  const rewritten = rewriteBundleRelativeImports(
+    {
+      existingFiles: [...args.existingFiles, ...args.currentFiles.map((file) => file.path)],
+    },
+    {
+      role: args.role,
+      summary: bundle.summary,
+      files: [...merged.values()],
+      validation: uniqueLines([...bundle.validation, ...collectReviewHints(args.reviews)]).slice(0, 6),
+    },
+  );
+
+  if (!isBundleSane(rewritten)) {
+    return buildCurrentBundle(args.role, args.currentFiles, args.reviews);
+  }
+
+  return rewritten;
 }
 
 function isBundleSane(bundle: GeneratedCodeBundle): boolean {
@@ -325,7 +371,7 @@ function resolveRelativeTarget(importerPath: string, specifier: string, knownPat
     `${rawTarget}/index.tsx`,
     `${rawTarget}/index.js`,
     `${rawTarget}/index.mjs`,
-  ].map((item) => normalizePath(item));
+  ].map((item) => normalizeGeneratedPath(item));
 
   return candidates.find((candidate) => knownPaths.has(candidate));
 }
@@ -363,4 +409,36 @@ function toImportSpecifier(importerPath: string, targetPath: string): string {
   }
 
   return withDotPrefix;
+}
+
+function buildCurrentBundle(
+  role: CodingRole,
+  currentFiles: GeneratedCodeFile[],
+  reviews: Array<{
+    findings: string[];
+    adjustment: string;
+  }>,
+): GeneratedCodeBundle {
+  return {
+    role,
+    summary: "Kept the current owner files because the revision response could not be validated safely.",
+    files: currentFiles,
+    validation: uniqueLines([
+      "The current owner bundle was preserved to avoid regressing a valid workspace state.",
+      ...collectReviewHints(reviews),
+    ]).slice(0, 6),
+  };
+}
+
+function collectReviewHints(
+  reviews: Array<{
+    findings: string[];
+    adjustment: string;
+  }>,
+): string[] {
+  return reviews.flatMap((review) => [...review.findings, review.adjustment]);
+}
+
+function uniqueLines(items: string[]): string[] {
+  return items.filter((item, index) => item.trim().length > 0 && items.indexOf(item) === index);
 }
