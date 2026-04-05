@@ -12,7 +12,7 @@ export const buildBriefSchema = z
     entities: z.array(z.string().min(1)).min(2).max(8),
     apiEndpoints: z.array(z.string().min(1)).max(10),
     stack: z.array(z.string().min(1)).min(2).max(6),
-    fileLayout: z.array(z.string().min(1)).min(5).max(14),
+    fileLayout: z.array(z.string().min(1)).min(6).max(16),
     acceptanceChecks: z.array(z.string().min(1)).min(3).max(6),
     notes: z.array(z.string().min(1)).min(2).max(6),
   })
@@ -28,7 +28,7 @@ export const generatedCodeFileSchema = z
 
 export const generatedCodeBundleSchema = z
   .object({
-    role: z.enum(["backend", "frontend", "ai", "infra"]),
+    role: z.enum(["backend", "frontend", "ai", "infra", "test"]),
     summary: z.string().min(1),
     files: z.array(generatedCodeFileSchema).min(1).max(8),
     validation: z.array(z.string().min(1)).min(2).max(6),

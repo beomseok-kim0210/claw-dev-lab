@@ -8,11 +8,11 @@ export function buildClarificationPrompt(userRequest: string, messages: ChatMess
   return buildHarnessPrompt({
     role: "pm",
     mode: "discussion",
-    objective: "구현을 막는 모호함이 있는지 점검하고, 꼭 필요한 사용자 질문만 뽑는다.",
+    objective: "구현을 막는 모호함이 있는지 판단하고, 정말 필요한 사용자 질문만 뽑아낸다.",
     responsibilities: [
-      "지금 답이 없으면 API, 데이터, 인프라, 화면 구조가 흔들리는 질문만 고른다.",
-      "질문은 최대 3개까지만 남긴다.",
-      "추정으로 진행해도 되는 사안은 질문으로 올리지 않는다.",
+      "지금 답이 없으면 API, 데이터, 테스트, 인프라, UI 구조가 흔들리는 질문만 고른다.",
+      "질문은 최대 3개까지만 만든다.",
+      "합리적 가정으로 충분한 내용은 질문으로 올리지 않는다.",
     ],
     userRequest,
     messages,
@@ -32,8 +32,8 @@ export function buildClarificationPrompt(userRequest: string, messages: ChatMess
       ],
       constraints: [
         "질문은 최대 3개까지만 작성한다.",
-        "questions가 비어 있으면 needsInput은 false 여야 한다.",
-        "각 질문은 지금 답을 모르면 구현이 흔들리는 내용이어야 한다.",
+        "questions가 비어 있으면 needsInput은 false여야 한다.",
+        "각 질문은 지금 답이 없으면 구현이 흔들리는 내용이어야 한다.",
       ],
     },
   });

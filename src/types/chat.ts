@@ -1,4 +1,4 @@
-export type ChatRole = "pm" | "backend" | "frontend" | "ai" | "infra" | "user";
+export type ChatRole = "pm" | "backend" | "frontend" | "ai" | "infra" | "test" | "user";
 
 export type ChatMessage = {
   id: string;
@@ -17,6 +17,7 @@ export const AGENT_SPEAKERS: Record<AgentRole, string> = {
   frontend: "프론트엔드 에이전트",
   ai: "AI 에이전트",
   infra: "인프라 에이전트",
+  test: "테스트 에이전트",
 };
 
 export const USER_SPEAKER = "사용자";

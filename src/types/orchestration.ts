@@ -14,6 +14,8 @@ import type {
   InfraSpec,
   PMFinalDecision,
   PMInitialDiscussion,
+  TestDiscussion,
+  TestSpec,
 } from "./contracts.js";
 import type { BuildBrief } from "./generation.js";
 
@@ -34,6 +36,7 @@ export type DiscussionBundle = {
   frontend: FrontendDiscussion;
   ai: AIDiscussion;
   infra: InfraDiscussion;
+  test: TestDiscussion;
   reactions: AgentReaction[];
   clarification?: ClarificationExchange;
   pmFinal: PMFinalDecision;
@@ -50,6 +53,7 @@ export type GeneratedSpecs = {
   frontend: FrontendSpec;
   ai: AIFeaturesSpec;
   infra: InfraSpec;
+  test: TestSpec;
   implementation: ImplementationPlan;
   buildBrief: BuildBrief;
 };

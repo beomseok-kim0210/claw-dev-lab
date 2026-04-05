@@ -14,6 +14,7 @@
   --frontend: #276749;
   --ai: #8f5d1d;
   --infra: #3559b7;
+  --test: #8a3ffc;
   --user: #1f3a93;
   --shadow: 0 24px 60px rgba(31, 36, 33, 0.08);
 }
@@ -455,6 +456,11 @@ body {
 .message-card[data-role="infra"] {
   border-color: rgba(53, 89, 183, 0.2);
   background: linear-gradient(180deg, rgba(53, 89, 183, 0.12), rgba(255, 255, 255, 0.82));
+}
+
+.message-card[data-role="test"] {
+  border-color: rgba(138, 63, 252, 0.2);
+  background: linear-gradient(180deg, rgba(138, 63, 252, 0.12), rgba(255, 255, 255, 0.82));
 }
 
 .message-card[data-role="user"] {

@@ -8,6 +8,7 @@ import type {
   ImplementationPlan,
   InfraSpec,
   PMFinalDecision,
+  TestSpec,
 } from "../types/contracts.js";
 import type { BuildBrief } from "../types/generation.js";
 import type { GeneratedArtifact } from "../types/orchestration.js";
@@ -28,6 +29,7 @@ export async function writeExecutionArtifacts(args: {
   frontendSpec: FrontendSpec;
   aiFeaturesSpec: AIFeaturesSpec;
   infraSpec: InfraSpec;
+  testSpec: TestSpec;
   implementationPlan: ImplementationPlan;
   buildBrief: BuildBrief;
 }): Promise<GeneratedArtifact[]> {
@@ -47,6 +49,10 @@ export async function writeExecutionArtifacts(args: {
     {
       filename: "infra-spec.md",
       content: renderInfraSpecMarkdown(args.finalDecision, args.infraSpec),
+    },
+    {
+      filename: "test-spec.md",
+      content: renderTestSpecMarkdown(args.finalDecision, args.testSpec),
     },
     {
       filename: "implementation-plan.md",
@@ -196,6 +202,34 @@ function renderInfraSpecMarkdown(finalDecision: PMFinalDecision, spec: InfraSpec
   ].join("\n");
 }
 
+function renderTestSpecMarkdown(finalDecision: PMFinalDecision, spec: TestSpec): string {
+  return [
+    "# 테스트 명세",
+    "",
+    "## PM 최종 방향",
+    spec.overview,
+    "",
+    "### 최종 MVP 범위",
+    `- ${finalDecision.finalDecision}`,
+    ...finalDecision.mvpScope.map((item) => `- ${item}`),
+    "",
+    "## 테스트 전략",
+    ...spec.testStrategy.map((item) => `- ${item}`),
+    "",
+    "## 핵심 시나리오",
+    ...spec.testScenarios.map((item) => `- ${item}`),
+    "",
+    "## 품질 게이트",
+    ...spec.qualityGates.map((item) => `- ${item}`),
+    "",
+    "## 구현 단계",
+    ...spec.implementationSteps.map((item) => `- ${item}`),
+    "",
+    "## 예시 코드",
+    renderCodeBlock(spec.exampleCode.language, spec.exampleCode.snippet),
+  ].join("\n");
+}
+
 function renderImplementationPlanMarkdown(finalDecision: PMFinalDecision, plan: ImplementationPlan): string {
   return [
     "# 구현 실행 계획",
@@ -267,7 +301,7 @@ function renderBuildBriefMarkdown(buildBrief: BuildBrief): string {
   ].join("\n");
 }
 
-function roleLabel(role: "pm" | "backend" | "frontend" | "ai" | "infra"): string {
+function roleLabel(role: "pm" | "backend" | "frontend" | "ai" | "infra" | "test"): string {
   if (role === "pm") {
     return "PM 에이전트";
   }
@@ -279,6 +313,9 @@ function roleLabel(role: "pm" | "backend" | "frontend" | "ai" | "infra"): string
   }
   if (role === "ai") {
     return "AI 전문가";
+  }
+  if (role === "test") {
+    return "테스트 에이전트";
   }
   return "인프라 에이전트";
 }

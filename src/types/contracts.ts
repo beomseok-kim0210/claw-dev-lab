@@ -59,6 +59,14 @@ export const infraDiscussionSchema = agentDiscussionBaseSchema
   })
   .strict();
 
+export const testDiscussionSchema = agentDiscussionBaseSchema
+  .extend({
+    testApproach: mediumBulletListSchema,
+    coverageFocus: shortBulletListSchema,
+    qualityRisks: shortBulletListSchema,
+  })
+  .strict();
+
 export const agentReactionSchema = z
   .object({
     headline: z.string().min(1),
@@ -74,8 +82,8 @@ export const agentReactionSchema = z
 export const clarificationQuestionSchema = z
   .object({
     id: z.string().regex(/^clarify-\d{2}$/),
-    askedBy: z.enum(["pm", "backend", "frontend", "ai", "infra"]),
-    topic: z.enum(["scope", "api", "data", "ui", "ai", "infra"]),
+    askedBy: z.enum(["pm", "backend", "frontend", "ai", "infra", "test"]),
+    topic: z.enum(["scope", "api", "data", "ui", "ai", "infra", "test"]),
     question: z.string().min(1),
     reason: z.string().min(1),
   })
@@ -153,11 +161,22 @@ export const infraSpecSchema = z
   })
   .strict();
 
+export const testSpecSchema = z
+  .object({
+    overview: z.string().min(1),
+    testStrategy: mediumBulletListSchema,
+    testScenarios: mediumBulletListSchema,
+    qualityGates: shortBulletListSchema,
+    implementationSteps: mediumBulletListSchema,
+    exampleCode: codeExampleSchema(["js", "ts", "md"]),
+  })
+  .strict();
+
 const implementationTaskSchema = z
   .object({
     id: z.string().regex(/^task-\d{2}$/),
     title: z.string().min(1),
-    owner: z.enum(["pm", "backend", "frontend", "ai", "infra"]),
+    owner: z.enum(["pm", "backend", "frontend", "ai", "infra", "test"]),
     goal: z.string().min(1),
     deliverables: shortBulletListSchema,
     acceptanceCriteria: shortBulletListSchema,
@@ -168,7 +187,7 @@ export const implementationPlanSchema = z
   .object({
     overview: z.string().min(1),
     milestones: mediumBulletListSchema,
-    tasks: z.array(implementationTaskSchema).min(5).max(5),
+    tasks: z.array(implementationTaskSchema).min(6).max(6),
     validationChecklist: shortBulletListSchema,
     kickoffPrompt: z.string().min(1),
   })
@@ -192,6 +211,8 @@ export const implementationReviewSchema = z
     reactionType: z.enum(["challenge", "support", "refine"]),
     targetMessageId: messageReferenceSchema,
     targetFiles: z.array(z.string().min(1)).min(1).max(8),
+    approvedAreas: z.array(z.string().min(1)).min(1).max(5),
+    findings: z.array(z.string().min(1)).min(1).max(5),
     assessment: z.string().min(1),
     adjustment: z.string().min(1),
     references: referenceListSchema,
@@ -203,6 +224,7 @@ export type BackendDiscussion = z.infer<typeof backendDiscussionSchema>;
 export type FrontendDiscussion = z.infer<typeof frontendDiscussionSchema>;
 export type AIDiscussion = z.infer<typeof aiDiscussionSchema>;
 export type InfraDiscussion = z.infer<typeof infraDiscussionSchema>;
+export type TestDiscussion = z.infer<typeof testDiscussionSchema>;
 export type AgentReaction = z.infer<typeof agentReactionSchema>;
 export type ClarificationQuestion = z.infer<typeof clarificationQuestionSchema>;
 export type ClarificationPlan = z.infer<typeof clarificationPlanSchema>;
@@ -211,6 +233,7 @@ export type BackendSpec = z.infer<typeof backendSpecSchema>;
 export type FrontendSpec = z.infer<typeof frontendSpecSchema>;
 export type AIFeaturesSpec = z.infer<typeof aiFeaturesSpecSchema>;
 export type InfraSpec = z.infer<typeof infraSpecSchema>;
+export type TestSpec = z.infer<typeof testSpecSchema>;
 export type ImplementationPlan = z.infer<typeof implementationPlanSchema>;
 export type ImplementationUpdate = z.infer<typeof implementationUpdateSchema>;
 export type ImplementationReview = z.infer<typeof implementationReviewSchema>;

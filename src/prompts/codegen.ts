@@ -83,6 +83,9 @@ function roleLabel(role: CodingRole): string {
   if (role === "infra") {
     return "Infra";
   }
+  if (role === "test") {
+    return "Test";
+  }
   return "AI";
 }
 
@@ -107,7 +110,15 @@ function roleResponsibilities(role: CodingRole): string[] {
     return [
       "Create only environment and operational files.",
       "Keep local run steps obvious and aligned with the generated file layout.",
-      "Do not collide with backend, frontend, or AI code paths.",
+      "Do not collide with backend, frontend, AI, or test code paths.",
+    ];
+  }
+
+  if (role === "test") {
+    return [
+      "Generate runnable smoke tests or contract tests with Node built-ins only.",
+      "Keep test files aligned with the generated API, UI, and shared contracts.",
+      "Favor deterministic checks over vague testing advice.",
     ];
   }
 

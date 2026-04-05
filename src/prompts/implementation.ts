@@ -4,6 +4,7 @@ import type {
   FrontendSpec,
   InfraSpec,
   PMFinalDecision,
+  TestSpec,
 } from "../types/contracts.js";
 import { buildHarnessPrompt } from "./shared.js";
 
@@ -14,6 +15,7 @@ export function buildImplementationPlanPrompt(args: {
   frontendSpec: FrontendSpec;
   aiFeaturesSpec: AIFeaturesSpec;
   infraSpec: InfraSpec;
+  testSpec: TestSpec;
 }): {
   systemPrompt: string;
   userPrompt: string;
@@ -23,18 +25,19 @@ export function buildImplementationPlanPrompt(args: {
     mode: "implementation",
     objective: "명세 결과를 실제 구현 작업 단위로 분해하고 역할별 실행 순서를 고정한다.",
     responsibilities: [
-      "백엔드, 프론트엔드, AI, 인프라 관점을 하나의 구현 계획으로 통합한다.",
-      "작업 순서, 산출물, 완료 기준을 빠짐없이 정의한다.",
-      "다음 단계 코드 실행 에이전트가 바로 움직일 수 있는 시작 지시문을 쓴다.",
+      "백엔드, 프론트엔드, AI, 인프라, 테스트 관점을 하나의 구현 계획으로 통합한다.",
+      "작업 순서, 산출물, 완료 기준을 빈칸 없이 정의한다.",
+      "다음 코드 실행 단계가 바로 시작될 수 있는 kickoffPrompt를 만든다.",
     ],
     userRequest: args.userRequest,
     contextBlocks: [
-      { title: "PM 최종 결정", lines: [args.finalDecision.finalDecision] },
-      { title: "MVP 범위", lines: args.finalDecision.mvpScope.map((item) => `- ${item}`) },
-      { title: "백엔드 명세 개요", lines: [args.backendSpec.overview, ...args.backendSpec.implementationSteps.map((item) => `- ${item}`)] },
-      { title: "프론트엔드 명세 개요", lines: [args.frontendSpec.overview, ...args.frontendSpec.implementationSteps.map((item) => `- ${item}`)] },
-      { title: "AI 명세 개요", lines: [args.aiFeaturesSpec.overview, ...args.aiFeaturesSpec.implementationSteps.map((item) => `- ${item}`)] },
-      { title: "인프라 명세 개요", lines: [args.infraSpec.overview, ...args.infraSpec.implementationSteps.map((item) => `- ${item}`)] },
+      { title: "PM Final Decision", lines: [args.finalDecision.finalDecision] },
+      { title: "MVP Scope", lines: args.finalDecision.mvpScope.map((item) => `- ${item}`) },
+      { title: "Backend Spec", lines: [args.backendSpec.overview, ...args.backendSpec.implementationSteps.map((item) => `- ${item}`)] },
+      { title: "Frontend Spec", lines: [args.frontendSpec.overview, ...args.frontendSpec.implementationSteps.map((item) => `- ${item}`)] },
+      { title: "AI Spec", lines: [args.aiFeaturesSpec.overview, ...args.aiFeaturesSpec.implementationSteps.map((item) => `- ${item}`)] },
+      { title: "Infra Spec", lines: [args.infraSpec.overview, ...args.infraSpec.implementationSteps.map((item) => `- ${item}`)] },
+      { title: "Test Spec", lines: [args.testSpec.overview, ...args.testSpec.implementationSteps.map((item) => `- ${item}`)] },
     ],
     contract: {
       schemaLines: [
@@ -51,13 +54,13 @@ export function buildImplementationPlanPrompt(args: {
         "    }",
         "  ],",
         '  "validationChecklist": ["검증 항목 1", "검증 항목 2"],',
-        '  "kickoffPrompt": "다음 구현 에이전트가 바로 사용할 시작 지시문"',
+        '  "kickoffPrompt": "다음 구현 단계가 바로 시작할 수 있는 지시문"',
       ],
       constraints: [
-        "tasks는 정확히 5개로 작성한다.",
-        "owner는 pm, backend, frontend, ai, infra를 각각 한 번씩만 사용한다.",
-        "deliverables와 acceptanceCriteria는 모두 검증 가능한 문장으로 적는다.",
-        "kickoffPrompt는 다음 구현 단계가 바로 실행 가능하도록 구체적으로 적는다.",
+        "tasks는 정확히 6개로 작성한다.",
+        "owner는 pm, backend, frontend, ai, infra, test를 각각 한 번씩만 사용한다.",
+        "deliverables와 acceptanceCriteria는 모두 실제 검증이 가능한 문장으로 쓴다.",
+        "kickoffPrompt는 구현 단계가 바로 실행될 수 있을 만큼 구체적이어야 한다.",
       ],
     },
   });

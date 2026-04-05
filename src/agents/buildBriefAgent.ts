@@ -7,6 +7,7 @@ import type {
   ImplementationPlan,
   InfraSpec,
   PMFinalDecision,
+  TestSpec,
 } from "../types/contracts.js";
 import { buildBriefSchema, type BuildBrief } from "../types/generation.js";
 
@@ -18,6 +19,7 @@ export async function generateBuildBrief(args: {
   frontendSpec: FrontendSpec;
   aiFeaturesSpec: AIFeaturesSpec;
   infraSpec: InfraSpec;
+  testSpec: TestSpec;
   implementationPlan: ImplementationPlan;
 }): Promise<BuildBrief> {
   const prompt = buildBuildBriefPrompt(args);
@@ -42,6 +44,7 @@ function buildFallbackBuildBrief(args: {
   frontendSpec: FrontendSpec;
   aiFeaturesSpec: AIFeaturesSpec;
   infraSpec: InfraSpec;
+  testSpec: TestSpec;
   implementationPlan: ImplementationPlan;
 }): BuildBrief {
   const appName = detectAppName(args.userRequest);
@@ -82,11 +85,13 @@ function buildFallbackBuildBrief(args: {
     fileLayout: detectFileLayout(appType),
     acceptanceChecks: takeUnique([
       ...args.implementationPlan.validationChecklist,
+      ...args.testSpec.qualityGates,
       ...args.finalDecision.deliveryPlan,
     ]).slice(0, 6),
     notes: takeUnique([
       ...args.infraSpec.operationsChecklist,
       ...args.aiFeaturesSpec.guardrails,
+      ...args.testSpec.testStrategy,
     ]).slice(0, 6),
   };
 }
@@ -152,6 +157,7 @@ function detectFileLayout(appType: BuildBrief["appType"]): string[] {
     "src/server.ts",
     "src/shared/contracts.ts",
     "src/lib/domain.ts",
+    "tests/bootstrap.test.mjs",
     "ops/README.md",
   ];
 

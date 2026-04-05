@@ -13,6 +13,8 @@ const FALLBACK_PROJECT_PATHS = [
   "public/index.html",
   "public/app.js",
   "public/styles.css",
+  "tests/bootstrap.test.mjs",
+  "tests/contracts.test.mjs",
   ".env.example",
   "Dockerfile",
   "ops/README.md",
@@ -109,6 +111,29 @@ export function buildFallbackCodeBundle(args: {
     };
   }
 
+  if (args.role === "test") {
+    return {
+      role: "test",
+      summary: "Created deterministic smoke tests and contract checks for the generated starter.",
+      files: [
+        {
+          path: "tests/bootstrap.test.mjs",
+          purpose: "Starts the built server and verifies the health and bootstrap endpoints",
+          content: renderBootstrapTest(),
+        },
+        {
+          path: "tests/contracts.test.mjs",
+          purpose: "Checks that the bootstrap payload carries the expected contract keys",
+          content: renderContractsTest(),
+        },
+      ],
+      validation: [
+        "npm test must pass after npm run build completes.",
+        "The generated tests must fail clearly when health or bootstrap payloads drift.",
+      ],
+    };
+  }
+
   return {
     role: "infra",
     summary: "Created run-time environment files for local execution and containerization.",
@@ -155,6 +180,7 @@ function renderPackageJson(appName: string): string {
         dev: "tsx src/server.ts",
         build: "tsc -p tsconfig.json",
         start: "node dist/server.js",
+        test: "npm run build && node --test tests/*.test.mjs",
       },
       devDependencies: {
         "@types/node": "^24.5.2",
@@ -494,9 +520,95 @@ function renderOpsReadme(buildBrief: BuildBrief): string {
     "- Open http://127.0.0.1:4040",
     "- Confirm /api/health returns app metadata",
     "- Confirm /api/bootstrap renders the generated brief",
+    "- Run npm test and confirm both generated smoke tests pass",
     "",
     "## Acceptance Checks",
     ...buildBrief.acceptanceChecks.map((item) => `- ${item}`),
+  ].join("\n");
+}
+
+function renderBootstrapTest(): string {
+  return [
+    "import assert from \"node:assert/strict\";",
+    "import { spawn } from \"node:child_process\";",
+    "import test from \"node:test\";",
+    "",
+    "const PORT = 4173;",
+    "const BASE_URL = `http://127.0.0.1:${PORT}`;",
+    "",
+    "test(\"health and bootstrap endpoints respond\", async (t) => {",
+    "  const server = spawn(process.execPath, [\"dist/server.js\"], {",
+    "    env: { ...process.env, PORT: String(PORT) },",
+    "    stdio: [\"ignore\", \"pipe\", \"pipe\"],",
+    "  });",
+    "",
+    "  const stopServer = () => {",
+    "    if (!server.killed) {",
+    "      server.kill();",
+    "    }",
+    "  };",
+    "",
+    "  await t.test(\"wait for boot\", async () => {",
+    "    await waitForServer(BASE_URL, 8000);",
+    "  });",
+    "",
+    "  t.after(stopServer);",
+    "",
+    "  const healthResponse = await fetch(`${BASE_URL}/api/health`);",
+    "  assert.equal(healthResponse.status, 200);",
+    "  const health = await healthResponse.json();",
+    "  assert.equal(health.ok, true);",
+    "",
+    "  const bootstrapResponse = await fetch(`${BASE_URL}/api/bootstrap`);",
+    "  assert.equal(bootstrapResponse.status, 200);",
+    "  const bootstrap = await bootstrapResponse.json();",
+    "  assert.equal(typeof bootstrap.appName, \"string\");",
+    "  assert.ok(Array.isArray(bootstrap.features));",
+    "  assert.ok(Array.isArray(bootstrap.insightCards));",
+    "});",
+    "",
+    "async function waitForServer(baseUrl, timeoutMs) {",
+    "  const startedAt = Date.now();",
+    "  while (Date.now() - startedAt < timeoutMs) {",
+    "    try {",
+    "      const response = await fetch(`${baseUrl}/api/health`);",
+    "      if (response.ok) {",
+    "        return;",
+    "      }",
+    "    } catch {}",
+    "    await new Promise((resolve) => setTimeout(resolve, 200));",
+    "  }",
+    "  throw new Error(\"Server did not become ready in time.\");",
+    "}",
+  ].join("\n");
+}
+
+function renderContractsTest(): string {
+  return [
+    "import assert from \"node:assert/strict\";",
+    "import test from \"node:test\";",
+    "",
+    "import {",
+    "  ACCEPTANCE_CHECKS,",
+    "  API_ENDPOINTS,",
+    "  APP_NAME,",
+    "  EXPERIENCE_PRINCIPLES,",
+    "  FEATURES,",
+    "  NOTES,",
+    "  SCREENS,",
+    "  TARGET_USERS,",
+    "} from \"../dist/shared/contracts.js\";",
+    "",
+    "test(\"shared contract exports contain the required arrays\", () => {",
+    "  assert.equal(typeof APP_NAME, \"string\");",
+    "  assert.ok(Array.isArray(TARGET_USERS));",
+    "  assert.ok(Array.isArray(EXPERIENCE_PRINCIPLES));",
+    "  assert.ok(Array.isArray(FEATURES));",
+    "  assert.ok(Array.isArray(SCREENS));",
+    "  assert.ok(Array.isArray(API_ENDPOINTS));",
+    "  assert.ok(Array.isArray(ACCEPTANCE_CHECKS));",
+    "  assert.ok(Array.isArray(NOTES));",
+    "});",
   ].join("\n");
 }
 

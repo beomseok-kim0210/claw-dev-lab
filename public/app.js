@@ -487,6 +487,9 @@ function roleLabel(role) {
   if (role === "infra") {
     return "인프라";
   }
+  if (role === "test") {
+    return "테스트";
+  }
   return "사용자";
 }
 
@@ -505,6 +508,9 @@ function topicLabel(topic) {
   }
   if (topic === "ai") {
     return "AI";
+  }
+  if (topic === "test") {
+    return "테스트";
   }
   return "인프라";
 }

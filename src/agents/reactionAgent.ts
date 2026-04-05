@@ -3,7 +3,7 @@ import type { AgentReaction } from "../types/contracts.js";
 
 export async function runAgentReaction(args: {
   client?: unknown;
-  role: "backend" | "frontend" | "ai" | "infra";
+  role: "backend" | "frontend" | "ai" | "infra" | "test";
   userRequest: string;
   messages: ChatMessage[];
   targetMessage: ChatMessage;
@@ -34,20 +34,20 @@ export function formatAgentReaction(reaction: AgentReaction): string {
 }
 
 function pickReactionType(
-  role: "backend" | "frontend" | "ai" | "infra",
+  role: "backend" | "frontend" | "ai" | "infra" | "test",
   targetRole: ChatMessage["role"],
 ): AgentReaction["reactionType"] {
   if (role === "ai" || targetRole === "pm") {
     return "support";
   }
-  if (role === "infra" || (role === "backend" && targetRole === "frontend")) {
+  if (role === "infra" || role === "test" || (role === "backend" && targetRole === "frontend")) {
     return "challenge";
   }
   return "refine";
 }
 
 function buildReactionBody(
-  role: "backend" | "frontend" | "ai" | "infra",
+  role: "backend" | "frontend" | "ai" | "infra" | "test",
   reactionType: AgentReaction["reactionType"],
   targetMessage: ChatMessage,
 ): string {
@@ -62,7 +62,7 @@ function buildReactionBody(
 }
 
 function buildAdjustment(
-  role: "backend" | "frontend" | "ai" | "infra",
+  role: "backend" | "frontend" | "ai" | "infra" | "test",
   targetMessage: ChatMessage,
 ): string {
   if (role === "backend") {
@@ -73,6 +73,9 @@ function buildAdjustment(
   }
   if (role === "infra") {
     return `Make the point from ${targetMessage.id} testable through run commands, env values, or deployment notes.`;
+  }
+  if (role === "test") {
+    return `Convert the point from ${targetMessage.id} into a runnable smoke test, contract check, or blocking quality gate.`;
   }
   return `Turn the point from ${targetMessage.id} into deterministic insight logic or analysis-friendly structure.`;
 }
@@ -96,7 +99,7 @@ function mapReactionType(value: AgentReaction["reactionType"]): string {
   return "refine";
 }
 
-function roleLabel(role: "backend" | "frontend" | "ai" | "infra"): string {
+function roleLabel(role: "backend" | "frontend" | "ai" | "infra" | "test"): string {
   if (role === "backend") {
     return "Backend";
   }
@@ -105,6 +108,9 @@ function roleLabel(role: "backend" | "frontend" | "ai" | "infra"): string {
   }
   if (role === "infra") {
     return "Infra";
+  }
+  if (role === "test") {
+    return "Test";
   }
   return "AI";
 }

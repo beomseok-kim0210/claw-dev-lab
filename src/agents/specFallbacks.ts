@@ -8,6 +8,8 @@ import type {
   InfraDiscussion,
   InfraSpec,
   PMFinalDecision,
+  TestDiscussion,
+  TestSpec,
 } from "../types/contracts.js";
 
 export function buildDeterministicBackendSpec(args: {
@@ -216,6 +218,58 @@ export function buildDeterministicInfraSpec(args: {
         "      - \"4040:4040\"",
         "    env_file:",
         "      - .env.example",
+      ].join("\n"),
+    },
+  };
+}
+
+export function buildDeterministicTestSpec(args: {
+  finalDecision: PMFinalDecision;
+  testDiscussion: TestDiscussion;
+}): TestSpec {
+  return {
+    overview: [
+      "구조화 응답이 흔들려도 검증 기준이 사라지지 않도록 테스트 명세를 deterministic fallback으로 복원합니다.",
+      args.testDiscussion.summary,
+      `PM 최종 결정은 ${args.finalDecision.finalDecision}`,
+    ].join(" "),
+    testStrategy: pickList(args.testDiscussion.testApproach, 3, 6, [
+      "핵심 엔드포인트에 대한 smoke test를 먼저 둔다.",
+      "공유 contracts와 실제 응답 payload를 맞추는 contract test를 둔다.",
+      "빌드 후 서버가 실제로 뜨는지 기본 실행 검증을 둔다.",
+    ]),
+    testScenarios: pickList(args.testDiscussion.coverageFocus, 3, 6, [
+      "GET /api/health가 200과 앱 메타데이터를 반환한다.",
+      "GET /api/bootstrap이 필수 필드를 포함한 bootstrap payload를 반환한다.",
+      "생성된 프론트가 bootstrap 데이터를 받아 화면에 렌더링한다.",
+    ]),
+    qualityGates: pickList(args.testDiscussion.qualityRisks, 2, 5, [
+      "빌드와 smoke test 중 하나라도 실패하면 다음 배포 단계로 넘기지 않는다.",
+      "공유 contract가 깨지면 프론트와 백엔드 모두 수정 대상으로 표시한다.",
+    ]),
+    implementationSteps: pickList(
+      [
+        ...args.finalDecision.deliveryPlan,
+        "node:test 기반 smoke test 파일을 만든다.",
+        "bootstrap payload와 계약을 검증하는 체크를 추가한다.",
+        "로컬 실행 명령과 테스트 명령을 문서에 함께 남긴다.",
+      ],
+      3,
+      6,
+      [],
+    ),
+    exampleCode: {
+      language: "js",
+      snippet: [
+        "import assert from \"node:assert/strict\";",
+        "import test from \"node:test\";",
+        "",
+        "test(\"health endpoint returns ok\", async () => {",
+        "  const response = await fetch(\"http://127.0.0.1:4040/api/health\");",
+        "  const payload = await response.json();",
+        "  assert.equal(response.status, 200);",
+        "  assert.equal(payload.ok, true);",
+        "});",
       ].join("\n"),
     },
   };

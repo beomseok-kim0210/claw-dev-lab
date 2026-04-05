@@ -13,6 +13,7 @@ import {
   runImplementationReview,
   runImplementationUpdate,
 } from "../agents/codingAgent.js";
+import { buildFallbackCodeBundle } from "../agents/codeScaffolder.js";
 import { formatFrontendDiscussion, generateFrontendSpec, runFrontendDiscussion } from "../agents/frontendAgent.js";
 import { formatInfraDiscussion, generateInfraSpec, runInfraDiscussion } from "../agents/infraAgent.js";
 import { generateImplementationPlan } from "../agents/implementationPlanner.js";
@@ -23,6 +24,7 @@ import {
   runPmInitialDiscussion,
 } from "../agents/pmAgent.js";
 import { formatAgentReaction, runAgentReaction } from "../agents/reactionAgent.js";
+import { formatTestDiscussion, generateTestSpec, runTestDiscussion } from "../agents/testAgent.js";
 import { OllamaClient } from "../llm/ollamaClient.js";
 import type { AgentRole, ChatMessage } from "../types/chat.js";
 import type {
@@ -30,7 +32,9 @@ import type {
   BackendDiscussion,
   FrontendDiscussion,
   ImplementationPlan,
+  ImplementationReview,
   InfraDiscussion,
+  TestDiscussion,
 } from "../types/contracts.js";
 import type {
   ClarificationAnswer,
@@ -54,6 +58,7 @@ type MultiAgentOrchestratorArgs = {
 };
 
 type DiscussionRole = Exclude<AgentRole, "pm">;
+const MAX_CODE_REVIEW_ROUNDS = 2;
 
 export class MultiAgentOrchestrator {
   private readonly client: OllamaClient;
@@ -92,6 +97,7 @@ export class MultiAgentOrchestrator {
     let frontend: FrontendDiscussion | undefined;
     let ai: AIDiscussion | undefined;
     let infra: InfraDiscussion | undefined;
+    let test: TestDiscussion | undefined;
 
     for (const role of discussionOrder) {
       if (role === "backend") {
@@ -124,6 +130,16 @@ export class MultiAgentOrchestrator {
         continue;
       }
 
+      if (role === "test") {
+        test = await runTestDiscussion({
+          client: this.client,
+          userRequest,
+          messages: chat.getMessages(),
+        });
+        await this.emitMessage(chat.addAgentMessage("test", formatTestDiscussion(test)));
+        continue;
+      }
+
       ai = await runAIDiscussion({
         client: this.client,
         userRequest,
@@ -132,7 +148,7 @@ export class MultiAgentOrchestrator {
       await this.emitMessage(chat.addAgentMessage("ai", formatAIDiscussion(ai)));
     }
 
-    if (!backend || !frontend || !ai || !infra) {
+    if (!backend || !frontend || !ai || !infra || !test) {
       throw new Error("중간 토론이 완결되지 않았습니다.");
     }
 
@@ -197,6 +213,12 @@ export class MultiAgentOrchestrator {
       finalDecision: pmFinal,
       infraDiscussion: infra,
     });
+    const testSpec = await generateTestSpec({
+      client: this.client,
+      userRequest,
+      finalDecision: pmFinal,
+      testDiscussion: test,
+    });
 
     const implementationPlan = await this.generateImplementationPlanAndEmitPhase(
       userRequest,
@@ -205,6 +227,7 @@ export class MultiAgentOrchestrator {
       frontendSpec,
       aiFeaturesSpec,
       infraSpec,
+      testSpec,
     );
     const buildBrief = await generateBuildBrief({
       client: this.client,
@@ -214,6 +237,7 @@ export class MultiAgentOrchestrator {
       frontendSpec,
       aiFeaturesSpec,
       infraSpec,
+      testSpec,
       implementationPlan,
     });
 
@@ -224,6 +248,7 @@ export class MultiAgentOrchestrator {
       frontendSpec,
       aiFeaturesSpec,
       infraSpec,
+      testSpec,
       implementationPlan,
       buildBrief,
     });
@@ -242,7 +267,7 @@ export class MultiAgentOrchestrator {
         .map((task) => [task.owner, task] as const),
     );
     const codingOrder = discussionOrder.filter((role) => codingTaskMap.has(role));
-    const codeArtifacts: GeneratedArtifact[] = [];
+    let codeArtifacts: GeneratedArtifact[] = [];
 
     for (let index = 0; index < codingOrder.length; index += 1) {
       const owner = codingOrder[index];
@@ -285,6 +310,7 @@ export class MultiAgentOrchestrator {
         frontendSpec,
         aiFeaturesSpec,
         infraSpec,
+        testSpec,
       });
       const updateMessage = chat.addAgentMessage(owner, formatImplementationUpdate(update));
       await this.emitMessage(updateMessage);
@@ -311,19 +337,89 @@ export class MultiAgentOrchestrator {
           },
         },
       );
-      codeArtifacts.push(...writtenCodeArtifacts);
+      codeArtifacts = mergeArtifacts(codeArtifacts, writtenCodeArtifacts);
 
-      const reviewer = codingOrder.length > 1 ? codingOrder[(index + 1) % codingOrder.length] : undefined;
-      if (reviewer && reviewer !== owner) {
-        const review = await runImplementationReview({
-          client: this.client,
-          role: reviewer,
+      let latestArtifacts = writtenCodeArtifacts;
+      let latestTargetMessage = updateMessage;
+      const reviewers = codingOrder.filter((role) => role !== owner);
+
+      for (let reviewRound = 1; reviewRound <= MAX_CODE_REVIEW_ROUNDS && reviewers.length > 0; reviewRound += 1) {
+        const reviews: Array<{ reviewer: DiscussionRole; review: ImplementationReview }> = [];
+
+        for (const reviewer of reviewers) {
+          const review = await runImplementationReview({
+            client: this.client,
+            role: reviewer,
+            userRequest,
+            messages: chat.getMessages(),
+            targetMessage: latestTargetMessage,
+            targetFiles,
+            generatedArtifacts: latestArtifacts,
+          });
+          reviews.push({ reviewer, review });
+          await this.emitMessage(chat.addAgentMessage(reviewer, formatImplementationReview(review)));
+        }
+
+        if (reviews.every((item) => item.review.reactionType === "support")) {
+          break;
+        }
+
+        if (reviewRound === MAX_CODE_REVIEW_ROUNDS) {
+          await this.emitMessage(chat.addAgentMessage("pm", formatRevisionStopMessage(owner, reviews)));
+          break;
+        }
+
+        const revisedArtifacts = buildRevisedArtifacts({
+          owner,
           userRequest,
           messages: chat.getMessages(),
-          targetMessage: updateMessage,
-          targetFiles,
+          buildBrief,
+          task,
+          existingFiles,
+          currentArtifacts: latestArtifacts,
+          codePathPrefix: this.codePathPrefix,
         });
-        await this.emitMessage(chat.addAgentMessage(reviewer, formatImplementationReview(review)));
+        const revisionMessage = chat.addAgentMessage(
+          owner,
+          formatRevisionUpdateMessage(owner, reviewRound, reviews, revisedArtifacts),
+        );
+        await this.emitMessage(revisionMessage);
+        latestTargetMessage = revisionMessage;
+
+        const revisedTargetFiles = revisedArtifacts.map((artifact) => artifact.filename);
+        await this.emitCodeActivity({
+          owner,
+          targetDirectory: this.codeOutputDir,
+          files: revisedTargetFiles,
+          writtenFiles: [],
+          currentFile: null,
+          state: "queued",
+          timestamp: new Date().toISOString(),
+        });
+
+        latestArtifacts = await writeArtifacts(
+          this.codeOutputDir,
+          revisedArtifacts.map((artifact) => ({
+            filename: artifact.filename,
+            content: artifact.content,
+          })),
+          {
+            onArtifactWritten: async (artifact, writtenArtifacts) => {
+              artifacts = mergeArtifacts(artifacts, [artifact]);
+              await this.hooks?.onArtifacts?.(artifacts);
+              await this.emitCodeActivity({
+                owner,
+                targetDirectory: this.codeOutputDir,
+                files: revisedTargetFiles,
+                writtenFiles: writtenArtifacts.map((item) => item.filename),
+                currentFile: artifact.filename,
+                state: writtenArtifacts.length === revisedTargetFiles.length ? "completed" : "writing",
+                timestamp: new Date().toISOString(),
+              });
+            },
+          },
+        );
+        codeArtifacts = mergeArtifacts(codeArtifacts, latestArtifacts);
       }
     }
 
@@ -339,6 +435,7 @@ export class MultiAgentOrchestrator {
         frontend,
         ai,
         infra,
+        test,
         reactions,
         ...(clarification ? { clarification } : {}),
         pmFinal,
@@ -348,6 +445,7 @@ export class MultiAgentOrchestrator {
         frontend: frontendSpec,
         ai: aiFeaturesSpec,
         infra: infraSpec,
+        test: testSpec,
         implementation: implementationPlan,
         buildBrief,
       },
@@ -394,6 +492,7 @@ export class MultiAgentOrchestrator {
     frontendSpec: OrchestrationResult["specs"]["frontend"],
     aiFeaturesSpec: OrchestrationResult["specs"]["ai"],
     infraSpec: OrchestrationResult["specs"]["infra"],
+    testSpec: OrchestrationResult["specs"]["test"],
   ): Promise<ImplementationPlan> {
     await this.emitPhase("implementation", "구현 실행 계획", "active", "명세를 실제 구현 작업 단위로 나누고 있습니다.");
     return generateImplementationPlan({
@@ -404,11 +503,12 @@ export class MultiAgentOrchestrator {
       frontendSpec,
       aiFeaturesSpec,
       infraSpec,
+      testSpec,
     });
   }
 
   private buildDiscussionOrder(userRequest: string): DiscussionRole[] {
-    const roles: DiscussionRole[] = ["backend", "frontend", "ai", "infra"];
+    const roles: DiscussionRole[] = ["backend", "frontend", "ai", "infra", "test"];
     const hash = Array.from(userRequest).reduce((acc, char) => acc + char.charCodeAt(0), 0);
     return this.rotateRoles(roles, hash % roles.length);
   }
@@ -502,4 +602,90 @@ function withCodePrefix(filename: string, codePathPrefix: string): string {
     return filename;
   }
   return `${codePathPrefix.replace(/[\\/]+$/u, "")}/${filename.replace(/^[\\/]+/u, "")}`;
+}
+
+function formatRevisionUpdateMessage(
+  owner: DiscussionRole,
+  reviewRound: number,
+  reviews: Array<{ reviewer: DiscussionRole; review: ImplementationReview }>,
+  revisedArtifacts: GeneratedArtifact[],
+): string {
+  const findings = uniqueReviewLines(reviews.flatMap((item) => item.review.findings)).slice(0, 6);
+  const approvedAreas = uniqueReviewLines(reviews.flatMap((item) => item.review.approvedAreas)).slice(0, 4);
+
+  return [
+    `Title: ${englishRoleLabel(owner)} revision round ${reviewRound}`,
+    "Message Type: revision",
+    `Round Summary: ${englishRoleLabel(owner)} is applying review feedback from ${reviews.map((item) => englishRoleLabel(item.reviewer)).join(", ")}.`,
+    "Approved Areas Kept:",
+    ...approvedAreas.map((item) => `- ${item}`),
+    "Issues Being Addressed:",
+    ...findings.map((item) => `- ${item}`),
+    "Rewritten Files:",
+    ...revisedArtifacts.map((artifact) => `- ${artifact.filename}`),
+  ].join("\n");
+}
+
+function formatRevisionStopMessage(
+  owner: DiscussionRole,
+  reviews: Array<{ reviewer: DiscussionRole; review: ImplementationReview }>,
+): string {
+  const blocking = uniqueReviewLines(
+    reviews.flatMap((item) => item.review.findings.filter((finding) => finding.startsWith("Blocking:"))),
+  ).slice(0, 4);
+
+  return [
+    "Title: PM review loop stop",
+    `Summary: ${englishRoleLabel(owner)} hit the maximum review rounds for this bundle.`,
+    "Open Issues:",
+    ...(blocking.length > 0 ? blocking.map((item) => `- ${item}`) : ["- No blocking issue remained, but the review loop reached its cap."]),
+  ].join("\n");
+}
+
+function buildRevisedArtifacts(args: {
+  owner: DiscussionRole;
+  userRequest: string;
+  messages: ChatMessage[];
+  buildBrief: BuildBrief;
+  task: ImplementationPlan["tasks"][number];
+  existingFiles: string[];
+  currentArtifacts: GeneratedArtifact[];
+  codePathPrefix: string;
+}): GeneratedArtifact[] {
+  const fallbackBundle = buildFallbackCodeBundle({
+    role: args.owner,
+    userRequest: args.userRequest,
+    messages: args.messages,
+    buildBrief: args.buildBrief,
+    task: args.task,
+    existingFiles: args.existingFiles,
+  });
+  const fallbackMap = new Map(
+    fallbackBundle.files.map((file) => [withCodePrefix(file.path, args.codePathPrefix), file.content] as const),
+  );
+
+  return args.currentArtifacts.map((artifact) => ({
+    ...artifact,
+    content: fallbackMap.get(artifact.filename) ?? artifact.content,
+  }));
+}
+
+function uniqueReviewLines(items: string[]): string[] {
+  return items.filter((item, index) => item.trim().length > 0 && items.indexOf(item) === index);
+}
+
+function englishRoleLabel(role: DiscussionRole): string {
+  if (role === "backend") {
+    return "Backend";
+  }
+  if (role === "frontend") {
+    return "Frontend";
+  }
+  if (role === "infra") {
+    return "Infra";
+  }
+  if (role === "test") {
+    return "Test";
+  }
+  return "AI";
 }

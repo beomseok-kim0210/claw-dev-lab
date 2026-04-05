@@ -8,6 +8,7 @@ import {
   type ImplementationPlan,
   type InfraSpec,
   type PMFinalDecision,
+  type TestSpec,
 } from "../types/contracts.js";
 
 type ImplementationPlannerArgs = {
@@ -18,6 +19,7 @@ type ImplementationPlannerArgs = {
   frontendSpec: FrontendSpec;
   aiFeaturesSpec: AIFeaturesSpec;
   infraSpec: InfraSpec;
+  testSpec: TestSpec;
 };
 
 export async function generateImplementationPlan(args: ImplementationPlannerArgs): Promise<ImplementationPlan> {
@@ -41,7 +43,7 @@ function buildDeterministicImplementationPlan(args: ImplementationPlannerArgs): 
     [
       args.finalDecision.deliveryPlan[0],
       args.finalDecision.deliveryPlan[1],
-      "역할별 구현을 통합하고 최종 검증을 수행한다.",
+      "역할별 구현 결과를 통합하고 테스트 에이전트가 품질 게이트를 통과시킨다.",
     ].filter((item): item is string => Boolean(item && item.trim().length > 0)),
     3,
   );
@@ -51,18 +53,18 @@ function buildDeterministicImplementationPlan(args: ImplementationPlannerArgs): 
       id: "task-01",
       title: "MVP 범위와 작업 기준 확정",
       owner: "pm",
-      goal: "최종 MVP 범위와 제외 범위를 구현 팀이 같은 기준으로 사용할 수 있게 정리한다.",
+      goal: "최종 MVP 범위와 제외 범위를 모든 역할이 같은 기준으로 사용하도록 정리한다.",
       deliverables: takeAtLeast(
         [
-          `MVP 범위 정리: ${args.finalDecision.mvpScope[0] ?? "핵심 기능 목록 정리"}`,
-          `제외 범위 정리: ${args.finalDecision.nonGoals[0] ?? "후속 단계 기능 분리"}`,
+          `MVP 범위 정리: ${args.finalDecision.mvpScope[0] ?? "핵심 기능 우선순위 확정"}`,
+          `비목표 정리: ${args.finalDecision.nonGoals[0] ?? "후속 단계 기능 분리"}`,
         ],
         2,
       ),
       acceptanceCriteria: takeAtLeast(
         [
           "모든 역할이 같은 MVP 범위를 기준으로 구현을 시작할 수 있다.",
-          "후속 단계로 미루는 항목이 명확히 분리되어 있다.",
+          "이번 세션에서 다루지 않을 범위가 분명하게 분리되어 있다.",
         ],
         2,
       ),
@@ -89,7 +91,7 @@ function buildDeterministicImplementationPlan(args: ImplementationPlannerArgs): 
     },
     {
       id: "task-03",
-      title: "프론트엔드 화면과 상호작용 구현",
+      title: "프론트 화면과 상호작용 구현",
       owner: "frontend",
       goal: args.frontendSpec.overview,
       deliverables: takeAtLeast(
@@ -109,7 +111,7 @@ function buildDeterministicImplementationPlan(args: ImplementationPlannerArgs): 
     },
     {
       id: "task-04",
-      title: "AI 기능 연동과 검증",
+      title: "AI 로직과 인사이트 흐름 구현",
       owner: "ai",
       goal: args.aiFeaturesSpec.overview,
       deliverables: takeAtLeast(
@@ -129,7 +131,7 @@ function buildDeterministicImplementationPlan(args: ImplementationPlannerArgs): 
     },
     {
       id: "task-05",
-      title: "배포 환경과 운영 구성 정리",
+      title: "실행 환경과 운영 경로 정리",
       owner: "infra",
       goal: args.infraSpec.overview,
       deliverables: takeAtLeast(
@@ -147,27 +149,47 @@ function buildDeterministicImplementationPlan(args: ImplementationPlannerArgs): 
         2,
       ),
     },
+    {
+      id: "task-06",
+      title: "품질 게이트와 회귀 테스트 구성",
+      owner: "test",
+      goal: args.testSpec.overview,
+      deliverables: takeAtLeast(
+        [
+          args.testSpec.testStrategy[0] ?? "핵심 테스트 전략 정리",
+          args.testSpec.testScenarios[0] ?? "핵심 시나리오 테스트 구현",
+        ],
+        2,
+      ),
+      acceptanceCriteria: takeAtLeast(
+        [
+          args.testSpec.implementationSteps[0] ?? "테스트 자동화 단계가 구현되어야 한다.",
+          args.testSpec.qualityGates[0] ?? "품질 게이트가 실행 결과로 확인되어야 한다.",
+        ],
+        2,
+      ),
+    },
   ];
 
   return {
     overview: [
-      "PM 최종 결정과 역할별 명세를 기준으로 구현 순서를 확정한다.",
-      "PM이 범위 기준을 고정한 뒤 백엔드, 프론트엔드, AI, 인프라 작업을 순차적으로 진행하고 마지막에 통합 검증을 수행한다.",
+      "PM 최종 결정과 역할별 명세를 기준으로 구현 순서를 고정한다.",
+      "백엔드, 프론트엔드, AI, 인프라, 테스트가 같은 세션 안에서 코드 생성과 리뷰를 이어간다.",
     ].join(" "),
     milestones,
     tasks,
     validationChecklist: takeAtLeast(
       [
-        "PM이 정의한 MVP 범위와 제외 범위가 구현 결과에 반영되어야 한다.",
-        "백엔드, 프론트엔드, AI, 인프라가 같은 사용자 흐름과 배포 구조를 기준으로 연결되어야 한다.",
-        "생성된 산출물과 실제 구현 결과가 서로 충돌하지 않아야 한다.",
+        "PM이 정한 MVP 범위와 제외 범위가 실제 생성 코드와 테스트에 반영되어야 한다.",
+        "역할별 생성물과 테스트 결과가 서로 충돌하지 않고 하나의 실행 경로로 연결되어야 한다.",
+        "테스트 에이전트의 품질 게이트가 마지막까지 유지되어야 한다.",
       ],
       2,
     ),
     kickoffPrompt: [
-      "PM 최종 결정과 implementation-plan.md를 기준으로 작업을 시작하라.",
-      "task-01부터 task-05 순서로 진행하고, 각 task의 deliverables와 acceptanceCriteria를 충족해야 한다.",
-      `핵심 사용자 요청: ${args.userRequest}`,
+      "PM 최종 결정과 implementation-plan.md를 기준으로 task-01부터 task-06까지 이어서 진행하라.",
+      "각 task는 deliverables와 acceptanceCriteria를 실제 파일과 검증 결과로 남겨야 한다.",
+      `사용자 요청: ${args.userRequest}`,
     ].join(" "),
   };
 }
@@ -175,7 +197,7 @@ function buildDeterministicImplementationPlan(args: ImplementationPlannerArgs): 
 function takeAtLeast(items: string[], minimum: number): string[] {
   const filtered = items.filter((item) => item.trim().length > 0);
   while (filtered.length < minimum) {
-    filtered.push("추가 구현 검토가 필요하다.");
+    filtered.push("추가 구현 검토가 필요합니다.");
   }
   return filtered;
 }

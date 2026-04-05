@@ -118,6 +118,10 @@ function isAllowedRolePath(role: CodingRole, file: GeneratedCodeFile): boolean {
     return filePath.startsWith("src/lib/") || filePath.startsWith("src/ai/");
   }
 
+  if (role === "test") {
+    return filePath.startsWith("tests/") || filePath.startsWith("src/test/");
+  }
+
   return (
     filePath === ".env.example" ||
     filePath === "Dockerfile" ||

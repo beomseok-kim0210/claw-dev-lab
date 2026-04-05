@@ -7,9 +7,10 @@ import type {
   InfraDiscussion,
   PMFinalDecision,
   PMInitialDiscussion,
+  TestDiscussion,
 } from "../types/contracts.js";
 
-type Role = "backend" | "frontend" | "ai" | "infra";
+type Role = "backend" | "frontend" | "ai" | "infra" | "test";
 
 export function buildDeterministicPmInitialDiscussion(args: {
   userRequest: string;
@@ -254,6 +255,50 @@ export function buildDeterministicInfraDiscussion(args: {
   };
 }
 
+export function buildDeterministicTestDiscussion(args: {
+  userRequest: string;
+  messages: ChatMessage[];
+}): TestDiscussion {
+  return {
+    headline: "테스트 관점 제안",
+    summary: "생성된 코드가 실제로 실행되고 역할 간 계약이 맞는지 빠르게 확인할 수 있는 검증 흐름을 먼저 고정해야 합니다.",
+    claim: "smoke test, contract test, regression check를 기본 세트로 둬야 멀티 에이전트 결과물을 신뢰할 수 있습니다.",
+    support: ensureMin(
+      [
+        "코드가 생성되더라도 실행 확인이 없으면 품질 회귀를 놓치기 쉽습니다.",
+        "API, UI, AI, 인프라 제안은 서로 맞물리기 때문에 통합 검증 포인트가 필요합니다.",
+        "테스트 기준이 있어야 리뷰 메시지도 단순 의견이 아니라 품질 게이트가 됩니다.",
+      ],
+      2,
+    ),
+    rebuttalTarget: pickRebuttalTarget(args.messages, "test"),
+    rebuttal: "설계와 구현이 맞더라도 검증 전략이 비어 있으면 이후 다른 앱 요청에서 같은 불안정성이 반복됩니다.",
+    testApproach: ensureMin(
+      [
+        "핵심 엔드포인트에 대한 smoke test를 만든다.",
+        "공유 contract와 실제 bootstrap payload의 일치를 확인하는 contract test를 만든다.",
+        "빌드 후 앱이 실제로 뜨는지 확인하는 기본 실행 검증을 포함한다.",
+      ],
+      3,
+    ),
+    coverageFocus: ensureMin(
+      [
+        "첫 실행 경로가 실제로 동작하는지 검증한다.",
+        "역할별 생성 파일이 서로 충돌하지 않고 연결되는지 확인한다.",
+      ],
+      2,
+    ),
+    qualityRisks: ensureMin(
+      [
+        "테스트 스크립트 없이 코드만 생성되면 회귀가 누적될 수 있습니다.",
+        "API 스키마와 프론트 렌더링 포인트가 어긋나면 앱이 빈 화면처럼 보일 수 있습니다.",
+      ],
+      2,
+    ),
+    references: takeReferences(args.messages, 3),
+  };
+}
+
 export function buildDeterministicReaction(args: {
   role: Role;
   messages: ChatMessage[];
@@ -309,6 +354,9 @@ function roleLabel(role: Role): string {
   }
   if (role === "infra") {
     return "인프라";
+  }
+  if (role === "test") {
+    return "테스트";
   }
   return "AI";
 }
