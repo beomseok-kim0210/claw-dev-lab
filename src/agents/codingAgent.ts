@@ -93,6 +93,51 @@ export async function runImplementationReview(args: {
   return buildFallbackImplementationReview(args);
 }
 
+export function buildVerificationRepairReview(args: {
+  targetMessage: ChatMessage;
+  targetFiles: string[];
+  verificationChecks: VerificationCheck[];
+  messages: ChatMessage[];
+}): ImplementationReview | undefined {
+  const failedChecks = args.verificationChecks.filter((check) => check.status === "failed");
+  const skippedChecks = args.verificationChecks.filter((check) => check.status === "skipped");
+
+  if (failedChecks.length === 0 && skippedChecks.length === 0) {
+    return undefined;
+  }
+
+  const findings = [
+    ...failedChecks.map((check) => `Blocking: ${check.name} failed. ${check.summary}`),
+    ...skippedChecks.map((check) => `Follow-up: ${check.name} was skipped. ${check.summary}`),
+  ].slice(0, 5);
+  const reactionType: ImplementationReview["reactionType"] = failedChecks.length > 0 ? "challenge" : "refine";
+
+  return {
+    headline: "Test verification repair request",
+    reactionType,
+    targetMessageId: args.targetMessage.id,
+    targetFiles: args.targetFiles,
+    approvedAreas: takeAtLeast(
+      args.verificationChecks
+        .filter((check) => check.status === "passed")
+        .map((check) => `Verification passed: ${check.name}. ${check.summary}`)
+        .slice(0, 3),
+      1,
+      "The workspace already has at least one concrete verification signal.",
+    ).slice(0, 5),
+    findings,
+    assessment:
+      failedChecks.length > 0
+        ? `Test agent found ${failedChecks.length} failed verification check(s) that must be fixed before the bundle can pass.`
+        : "Test agent did not see a failed check, but at least one verification step was skipped and should be addressed.",
+    adjustment:
+      failedChecks.length > 0
+        ? `Fix the failing verification checks first: ${failedChecks.map((check) => check.name).join(", ")}.`
+        : `Add the missing verification coverage next: ${skippedChecks.map((check) => check.name).join(", ")}.`,
+    references: takeReferences(args.messages),
+  };
+}
+
 function buildFallbackImplementationReview(args: {
   role: CodingRole;
   messages: ChatMessage[];

@@ -8,6 +8,7 @@ import {
 import { generateBuildBrief } from "../agents/buildBriefAgent.js";
 import { generateCodeBundle, reviseCodeBundle } from "../agents/codegenAgent.js";
 import {
+  buildVerificationRepairReview,
   formatImplementationReview,
   formatImplementationUpdate,
   runImplementationReview,
@@ -379,8 +380,22 @@ export class MultiAgentOrchestrator {
 
       for (let reviewRound = 1; reviewRound <= MAX_CODE_REVIEW_ROUNDS && reviewers.length > 0; reviewRound += 1) {
         const reviews: Array<{ reviewer: DiscussionRole; review: ImplementationReview }> = [];
+        const autoTestRepairReview = buildVerificationRepairReview({
+          targetMessage: latestTargetMessage,
+          targetFiles: latestTargetFiles,
+          verificationChecks: latestVerificationChecks,
+          messages: chat.getMessages(),
+        });
+
+        if (autoTestRepairReview) {
+          reviews.push({ reviewer: "test", review: autoTestRepairReview });
+          await this.emitMessage(chat.addAgentMessage("test", formatImplementationReview(autoTestRepairReview)));
+        }
 
         for (const reviewer of reviewers) {
+          if (reviewer === "test" && autoTestRepairReview) {
+            continue;
+          }
           const review = await runImplementationReview({
             client: this.client,
             role: reviewer,

@@ -6,6 +6,7 @@ const state = {
   snapshot: null,
   eventSource: null,
   activeArtifact: null,
+  projectMemory: null,
 };
 
 const requestInput = document.getElementById("requestInput");
@@ -15,6 +16,9 @@ const exampleButton = document.getElementById("exampleButton");
 const sessionIdValue = document.getElementById("sessionIdValue");
 const sessionStatusValue = document.getElementById("sessionStatusValue");
 const targetDirectoryValue = document.getElementById("targetDirectoryValue");
+const projectMemoryMode = document.getElementById("projectMemoryMode");
+const projectMemorySummary = document.getElementById("projectMemorySummary");
+const projectMemoryPreview = document.getElementById("projectMemoryPreview");
 const healthChip = document.getElementById("healthChip");
 const modelChip = document.getElementById("modelChip");
 const phaseList = document.getElementById("phaseList");
@@ -31,8 +35,19 @@ const artifactToolbar = document.getElementById("artifactToolbar");
 const artifactPreview = document.getElementById("artifactPreview");
 const messageTemplate = document.getElementById("messageTemplate");
 
+let projectMemoryLookupTimer = null;
+
 exampleButton.addEventListener("click", () => {
   requestInput.value = EXAMPLE_REQUEST;
+});
+
+targetDirectoryInput.addEventListener("input", () => {
+  if (projectMemoryLookupTimer) {
+    clearTimeout(projectMemoryLookupTimer);
+  }
+  projectMemoryLookupTimer = setTimeout(() => {
+    void inspectProjectMemory();
+  }, 220);
 });
 
 submitButton.addEventListener("click", async () => {
@@ -79,6 +94,7 @@ async function boot() {
   renderCodeActivity(undefined);
   renderClarification(undefined, "queued");
   await loadHealth();
+  await inspectProjectMemory();
 }
 
 async function loadHealth() {
@@ -94,6 +110,26 @@ async function loadHealth() {
   } catch {
     healthChip.textContent = "Ollama 연결 실패";
     healthChip.classList.remove("healthy");
+  }
+}
+
+async function inspectProjectMemory() {
+  const targetDirectory = targetDirectoryInput.value.trim();
+  try {
+    const params = new URLSearchParams();
+    if (targetDirectory) {
+      params.set("targetDirectory", targetDirectory);
+    }
+    const response = await fetch(`/api/project-memory?${params.toString()}`);
+    if (!response.ok) {
+      throw new Error("프로젝트 상태를 불러오지 못했습니다.");
+    }
+    state.projectMemory = await response.json();
+    renderProjectMemory(state.projectMemory);
+  } catch (error) {
+    projectMemoryMode.textContent = "프로젝트 상태 확인 실패";
+    projectMemorySummary.textContent = error instanceof Error ? error.message : String(error);
+    projectMemoryPreview.innerHTML = "";
   }
 }
 
@@ -189,6 +225,48 @@ function applySnapshot(snapshot) {
   renderTranscript(snapshot.transcript);
   renderDecision(snapshot.transcript, snapshot.error);
   renderArtifacts(snapshot.artifacts);
+}
+
+function renderProjectMemory(preview) {
+  const isContinue = preview?.mode === "continue";
+  projectMemoryMode.textContent = isContinue ? "기존 프로젝트를 이어서 개발합니다." : "새 프로젝트로 시작합니다.";
+
+  if (!preview) {
+    projectMemorySummary.textContent = "프로젝트 상태를 확인하지 못했습니다.";
+    projectMemoryPreview.innerHTML = "";
+    updateSubmitLabel();
+    return;
+  }
+
+  const summaryParts = [];
+  if (preview.hasProjectMemory && preview.appName) {
+    summaryParts.push(`${preview.appName} 메모리가 저장되어 있습니다.`);
+  } else if (preview.exists && preview.workspaceFileCount > 0) {
+    summaryParts.push(`기존 파일 ${preview.workspaceFileCount}개가 발견되었습니다.`);
+  } else {
+    summaryParts.push("아직 이전 프로젝트 흔적이 없습니다.");
+  }
+
+  if (preview.primaryGoal) {
+    summaryParts.push(`최근 목표: ${preview.primaryGoal}`);
+  }
+
+  projectMemorySummary.textContent = summaryParts.join(" ");
+  const lines = [];
+  if (preview.recentRequests?.length) {
+    lines.push(`<p class="memory-preview-heading">최근 요청</p>`);
+    lines.push(...preview.recentRequests.map((item) => `<p class="memory-preview-item">${escapeHtml(item)}</p>`));
+  }
+  if (preview.workspacePreview?.length) {
+    lines.push(`<p class="memory-preview-heading">기존 파일</p>`);
+    lines.push(...preview.workspacePreview.map((item) => `<p class="memory-preview-item mono">${escapeHtml(item)}</p>`));
+  }
+  if (preview.unresolvedFindings?.length) {
+    lines.push(`<p class="memory-preview-heading">남은 이슈</p>`);
+    lines.push(...preview.unresolvedFindings.map((item) => `<p class="memory-preview-item">${escapeHtml(item)}</p>`));
+  }
+  projectMemoryPreview.innerHTML = lines.join("");
+  updateSubmitLabel();
 }
 
 function formatStatus(status, error) {
@@ -664,7 +742,7 @@ function escapeHtml(value) {
 
 function setBusy(isBusy) {
   submitButton.disabled = isBusy;
-  submitButton.textContent = isBusy ? "세션 실행 중..." : "세션 시작";
+  submitButton.textContent = isBusy ? "세션 실행 중..." : currentSubmitLabel();
 }
 
 function resetSessionView() {
@@ -684,6 +762,17 @@ function resetSessionView() {
   renderTranscript([]);
   renderArtifacts([]);
   decisionText.textContent = "토론이 끝나면 PM 최종 결정이 여기에 표시됩니다.";
+  updateSubmitLabel();
+}
+
+function updateSubmitLabel() {
+  if (!submitButton.disabled) {
+    submitButton.textContent = currentSubmitLabel();
+  }
+}
+
+function currentSubmitLabel() {
+  return state.projectMemory?.mode === "continue" ? "이어서 개발 시작" : "세션 시작";
 }
 
 function defaultPhases() {

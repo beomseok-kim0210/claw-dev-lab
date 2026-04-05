@@ -9,6 +9,7 @@ import { z } from "zod";
 import { loadServerConfig, resolveDefaultTargetDirectory } from "./config.js";
 import { OllamaClient } from "./llm/ollamaClient.js";
 import { MultiAgentOrchestrator } from "./orchestrator/multiAgentOrchestrator.js";
+import { listWorkspaceFiles, loadProjectMemory } from "./orchestrator/projectMemory.js";
 import { SessionStore } from "./server/sessionStore.js";
 import type { ClarificationAnswer } from "./types/orchestration.js";
 
@@ -48,6 +49,12 @@ const server = createServer(async (req, res) => {
         baseUrl: config.ollamaBaseUrl,
         defaultTargetDirectory: resolveDefaultTargetDirectory(),
       });
+    }
+
+    if (method === "GET" && requestUrl.pathname === "/api/project-memory") {
+      const targetDirectory = normalizeTargetDirectory(requestUrl.searchParams.get("targetDirectory") ?? undefined);
+      const preview = await inspectProjectTarget(targetDirectory);
+      return sendJson(res, 200, preview);
     }
 
     if (method === "POST" && requestUrl.pathname === "/api/sessions") {
@@ -270,4 +277,50 @@ function normalizeTargetDirectory(raw: string | undefined): string | undefined {
   }
 
   return path.resolve(config.cwd, raw);
+}
+
+async function inspectProjectTarget(targetDirectory: string | undefined): Promise<{
+  targetDirectory: string;
+  exists: boolean;
+  hasProjectMemory: boolean;
+  mode: "new" | "continue";
+  appName?: string;
+  primaryGoal?: string;
+  recentRequests: string[];
+  workspaceFileCount: number;
+  workspacePreview: string[];
+  unresolvedFindings: string[];
+}> {
+  const resolvedTarget = targetDirectory ?? resolveDefaultTargetDirectory();
+  const exists = await isDirectory(resolvedTarget);
+  const projectMemory = await loadProjectMemory(resolvedTarget);
+  const workspaceFiles = exists ? await listWorkspaceFiles(resolvedTarget).catch(() => [] as string[]) : [];
+  const hasProjectMemory = Boolean(projectMemory);
+  const mode: "new" | "continue" = hasProjectMemory || workspaceFiles.length > 0 ? "continue" : "new";
+
+  return {
+    targetDirectory: resolvedTarget,
+    exists,
+    hasProjectMemory,
+    mode,
+    ...(projectMemory?.latestBuildBrief
+      ? {
+          appName: projectMemory.latestBuildBrief.appName,
+          primaryGoal: projectMemory.latestBuildBrief.primaryGoal,
+        }
+      : {}),
+    recentRequests: projectMemory?.requestHistory.slice(-3).map((item) => item.request) ?? [],
+    workspaceFileCount: workspaceFiles.length,
+    workspacePreview: workspaceFiles.slice(0, 8),
+    unresolvedFindings: projectMemory?.unresolvedFindings.slice(0, 4) ?? [],
+  };
+}
+
+async function isDirectory(targetPath: string): Promise<boolean> {
+  try {
+    const targetStat = await stat(targetPath);
+    return targetStat.isDirectory();
+  } catch {
+    return false;
+  }
 }

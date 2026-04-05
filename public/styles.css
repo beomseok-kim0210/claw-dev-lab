@@ -263,6 +263,32 @@ body {
   line-height: 1.6;
 }
 
+.memory-preview-list {
+  margin-top: 0.85rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.memory-preview-heading {
+  margin: 0.35rem 0 0;
+  font-size: 0.78rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.memory-preview-item {
+  margin: 0;
+  line-height: 1.45;
+  font-size: 0.92rem;
+}
+
+.memory-preview-item.mono {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.84rem;
+}
+
 .hidden {
   display: none;
 }
