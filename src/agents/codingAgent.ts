@@ -1,6 +1,7 @@
 import { resolveGenerationProfile } from "../llm/modelProfiles.js";
 import { OllamaClient } from "../llm/ollamaClient.js";
 import { buildImplementationReviewPrompt } from "../prompts/coding.js";
+import { buildConversationMessages } from "../prompts/shared.js";
 import type { AgentRole, ChatMessage } from "../types/chat.js";
 import type {
   AIFeaturesSpec,
@@ -81,6 +82,7 @@ export async function runImplementationReview(args: {
     try {
       const generated = await args.client.generateStructured({
         ...prompt,
+        conversationMessages: buildConversationMessages(args.messages),
         schema: implementationReviewResponseSchema,
         ...profile,
       });

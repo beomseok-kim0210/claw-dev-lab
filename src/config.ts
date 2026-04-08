@@ -8,7 +8,10 @@ loadEnv({ quiet: true });
 
 const envSchema = z.object({
   OLLAMA_BASE_URL: z.string().default("http://127.0.0.1:11434"),
-  OLLAMA_MODEL: z.string().min(1).default("qwen3"),
+  OLLAMA_MODEL: z.string().min(1).default("qwen3.5"),
+  // 코드 생성 전용 모델 — 코드 특화 모델을 쓰면 실제 전문성이 분리됨
+  // 설정 안 하면 OLLAMA_MODEL과 동일하게 동작
+  OLLAMA_CODEGEN_MODEL: z.string().min(1).optional(),
   AGENT_OUTPUT_DIR: z.string().optional(),
   MULTI_AGENT_PORT: z.coerce.number().int().min(1).max(65535).default(3030),
 });
@@ -21,6 +24,8 @@ export type AppConfig = {
   outputDir: string;
   ollamaBaseUrl: string;
   ollamaModel: string;
+  // 코드 생성 전용 모델. 설정 안 하면 ollamaModel과 동일
+  ollamaCodegenModel: string;
   timeoutMs: number;
 };
 
@@ -44,11 +49,13 @@ export function loadAppConfig(
   const cwd = path.resolve(overrides?.cwd ?? process.cwd());
   const outputDir = path.resolve(overrides?.outputDir ?? parsed.data.AGENT_OUTPUT_DIR ?? cwd);
 
+  const ollamaModel = overrides?.ollamaModel ?? parsed.data.OLLAMA_MODEL;
   return {
     cwd,
     outputDir,
     ollamaBaseUrl: normalizeBaseUrl(overrides?.ollamaBaseUrl ?? parsed.data.OLLAMA_BASE_URL),
-    ollamaModel: overrides?.ollamaModel ?? parsed.data.OLLAMA_MODEL,
+    ollamaModel,
+    ollamaCodegenModel: parsed.data.OLLAMA_CODEGEN_MODEL ?? ollamaModel,
     timeoutMs: 120_000,
   };
 }

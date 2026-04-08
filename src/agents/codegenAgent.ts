@@ -1,24 +1,31 @@
-import { builtinModules } from "node:module";
+import { spawnSync } from "node:child_process";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import { tmpdir } from "node:os";
 
 import { resolveGenerationProfile } from "../llm/modelProfiles.js";
 import { OllamaClient } from "../llm/ollamaClient.js";
-import { buildCodeBundlePrompt, buildCodeRevisionPrompt } from "../prompts/codegen.js";
+import {
+  buildCodeBundlePrompt,
+  buildCodeFilePrompt,
+  buildCodeFileRevisionPrompt,
+} from "../prompts/codegen.js";
+import { buildConversationMessages } from "../prompts/shared.js";
 import type { ChatMessage } from "../types/chat.js";
 import type { ImplementationPlan } from "../types/contracts.js";
 import {
   type BuildBrief,
   type GeneratedCodeBundle,
   type GeneratedCodeFile,
+  type GeneratedCodePlan,
+  type GeneratedCodePlanFile,
   generatedCodeBundleSchema,
+  generatedCodeFileSchema,
+  generatedCodePlanSchema,
 } from "../types/generation.js";
-import { buildFallbackCodeBundle, listFallbackProjectPaths } from "./codeScaffolder.js";
 import { isAllowedRolePath, normalizeGeneratedPath, type CodingRole } from "./codegenPaths.js";
+import { buildFallbackCodeBundle } from "./codeScaffolder.js";
 
-const BUILTIN_IMPORTS = new Set(
-  builtinModules.flatMap((item) => (item.startsWith("node:") ? [item, item.slice(5)] : [item, `node:${item}`])),
-);
-const SAFE_DEV_DEPENDENCIES = new Set(["@types/node", "tsx", "typescript"]);
 const PLACEHOLDER_PATTERN = /\b(?:todo|placeholder|fill me|omit(?:ted)?|lorem ipsum)\b/i;
 
 export async function generateCodeBundle(args: {
@@ -31,20 +38,24 @@ export async function generateCodeBundle(args: {
   existingFiles: string[];
   workspaceContextFiles?: Array<{ path: string; content: string }>;
 }): Promise<GeneratedCodeBundle> {
-  const prompt = buildCodeBundlePrompt(args);
   const profile = resolveGenerationProfile(args.client.getModelName(), "codegen");
+  const plan = await generateBundlePlan(args, profile);
+  const files = await generatePlannedFiles(args, profile, plan.files);
 
-  try {
-    const generated = await args.client.generateStructured({
-      ...prompt,
-      schema: generatedCodeBundleSchema,
-      ...profile,
-    });
-
-    return normalizeBundle(args, generated);
-  } catch {
-    return buildFallbackCodeBundle(args);
+  if (files.length === 0) {
+    return safelyRecoverOrFallback(args, plan);
   }
+
+  return finalizeBundle(
+    args,
+    {
+      role: args.role,
+      summary: plan.summary,
+      files,
+      validation: plan.validation,
+    },
+    () => safelyRecoverOrFallback(args, plan),
+  );
 }
 
 export async function reviseCodeBundle(args: {
@@ -65,23 +76,222 @@ export async function reviseCodeBundle(args: {
   }>;
   workspaceContextFiles?: Array<{ path: string; content: string }>;
 }): Promise<GeneratedCodeBundle> {
-  const prompt = buildCodeRevisionPrompt(args);
   const profile = resolveGenerationProfile(args.client.getModelName(), "codegen");
+  const revisedFiles = await reviseFilesIndividually(args, profile);
+
+  if (revisedFiles.length === 0) {
+    return buildCurrentBundle(args.role, args.currentFiles, args.reviews);
+  }
+
+  return finalizeBundle(
+    args,
+    {
+      role: args.role,
+      summary: `Revised ${revisedFiles.length} file(s) for ${args.task.title}.`,
+      files: mergeCurrentAndRevisedFiles(args.currentFiles, revisedFiles),
+      validation: uniqueLines([
+        ...args.reviews.flatMap((review) => review.findings),
+        ...args.reviews.map((review) => review.adjustment),
+      ]).slice(0, 6),
+    },
+    () => buildCurrentBundle(args.role, args.currentFiles, args.reviews),
+  );
+}
+
+async function generateBundlePlan(
+  args: {
+    client: OllamaClient;
+    role: CodingRole;
+    userRequest: string;
+    messages: ChatMessage[];
+    buildBrief: BuildBrief;
+    task: ImplementationPlan["tasks"][number];
+    existingFiles: string[];
+    workspaceContextFiles?: Array<{ path: string; content: string }>;
+  },
+  profile: ReturnType<typeof resolveGenerationProfile>,
+): Promise<GeneratedCodePlan> {
+  const prompt = buildCodeBundlePrompt(args);
 
   try {
     const generated = await args.client.generateStructured({
       ...prompt,
-      schema: generatedCodeBundleSchema,
+      conversationMessages: buildConversationMessages(args.messages),
+      schema: generatedCodePlanSchema,
       ...profile,
     });
-
-    return normalizeRevisionBundle(args, generated);
+    const normalized = normalizePlan(args.role, generated);
+    if (normalized.files.length > 0) {
+      return normalized;
+    }
   } catch {
-    return buildCurrentBundle(args.role, args.currentFiles, args.reviews);
+    // fall through to deterministic plan
   }
+
+  return deriveDeterministicPlan(args);
 }
 
-function normalizeBundle(
+async function generatePlannedFiles(
+  args: {
+    client: OllamaClient;
+    role: CodingRole;
+    userRequest: string;
+    messages: ChatMessage[];
+    buildBrief: BuildBrief;
+    task: ImplementationPlan["tasks"][number];
+    existingFiles: string[];
+    workspaceContextFiles?: Array<{ path: string; content: string }>;
+  },
+  profile: ReturnType<typeof resolveGenerationProfile>,
+  files: GeneratedCodePlanFile[],
+): Promise<GeneratedCodeFile[]> {
+  const generatedFiles: GeneratedCodeFile[] = [];
+
+  for (const targetFile of files) {
+    const prompt = buildCodeFilePrompt({
+      ...args,
+      targetFile,
+    });
+
+    try {
+      const generated = await args.client.generateStructured({
+        ...prompt,
+        conversationMessages: buildConversationMessages(args.messages),
+        schema: generatedCodeFileSchema,
+        ...profile,
+      });
+      const normalized = normalizeFile(targetFile, generated);
+      if (isGeneratedFileSane(normalized)) {
+        generatedFiles.push(normalized);
+        continue;
+      }
+    } catch {
+      // fall through to recovery
+    }
+
+    const fallbackFile = resolveFallbackFile(args, targetFile);
+    if (fallbackFile && isGeneratedFileSane(fallbackFile)) {
+      generatedFiles.push(fallbackFile);
+    }
+  }
+
+  return generatedFiles;
+}
+
+async function reviseFilesIndividually(
+  args: {
+    client: OllamaClient;
+    role: CodingRole;
+    userRequest: string;
+    messages: ChatMessage[];
+    buildBrief: BuildBrief;
+    task: ImplementationPlan["tasks"][number];
+    existingFiles: string[];
+    currentFiles: GeneratedCodeFile[];
+    reviews: Array<{
+      reviewer: CodingRole;
+      reactionType: "challenge" | "support" | "refine";
+      approvedAreas: string[];
+      findings: string[];
+      adjustment: string;
+    }>;
+    workspaceContextFiles?: Array<{ path: string; content: string }>;
+  },
+  profile: ReturnType<typeof resolveGenerationProfile>,
+): Promise<GeneratedCodeFile[]> {
+  const revisedFiles: GeneratedCodeFile[] = [];
+
+  for (const currentFile of args.currentFiles) {
+    const prompt = buildCodeFileRevisionPrompt({
+      ...args,
+      currentFile,
+    });
+
+    try {
+      const generated = await args.client.generateStructured({
+        ...prompt,
+        conversationMessages: buildConversationMessages(args.messages),
+        schema: generatedCodeFileSchema,
+        ...profile,
+      });
+      const normalized = normalizeFile(currentFile, generated);
+      revisedFiles.push(isGeneratedFileSane(normalized) ? normalized : currentFile);
+    } catch {
+      revisedFiles.push(currentFile);
+    }
+  }
+
+  return revisedFiles;
+}
+
+function finalizeBundle(
+  args: {
+    role: CodingRole;
+    existingFiles: string[];
+    workspaceContextFiles?: Array<{ path: string; content: string }>;
+  },
+  bundle: GeneratedCodeBundle,
+  fallbackFactory: () => GeneratedCodeBundle,
+): GeneratedCodeBundle {
+  const normalizedFiles = bundle.files
+    .map((file) => ({
+      ...file,
+      path: normalizeGeneratedPath(file.path),
+    }))
+    .filter((file, index, all) => all.findIndex((candidate) => candidate.path === file.path) === index)
+    .filter((file) => isAllowedRolePath(args.role, file.path));
+
+  if (normalizedFiles.length === 0) {
+    return fallbackFactory();
+  }
+
+  const rewritten = rewriteBundleRelativeImports(
+    {
+      existingFiles: [
+        ...args.existingFiles.map((item) => normalizeGeneratedPath(item)),
+        ...(args.workspaceContextFiles?.map((item) => normalizeGeneratedPath(item.path)) ?? []),
+      ],
+    },
+    {
+      ...bundle,
+      role: args.role,
+      files: normalizedFiles,
+    },
+  );
+
+  if (!isBundleSane(rewritten)) {
+    return fallbackFactory();
+  }
+
+  return generatedCodeBundleSchema.parse(rewritten);
+}
+
+function normalizePlan(role: CodingRole, plan: GeneratedCodePlan): GeneratedCodePlan {
+  const files = plan.files
+    .map((file) => ({
+      path: normalizeGeneratedPath(file.path),
+      purpose: file.purpose.trim(),
+    }))
+    .filter((file, index, all) => all.findIndex((candidate) => candidate.path === file.path) === index)
+    .filter((file) => isAllowedRolePath(role, file.path));
+
+  return {
+    role,
+    summary: plan.summary,
+    files,
+    validation: plan.validation,
+  };
+}
+
+function normalizeFile(targetFile: GeneratedCodePlanFile | GeneratedCodeFile, generated: GeneratedCodeFile): GeneratedCodeFile {
+  return {
+    path: normalizeGeneratedPath(targetFile.path),
+    purpose: generated.purpose.trim().length > 0 ? generated.purpose : targetFile.purpose,
+    content: generated.content,
+  };
+}
+
+function resolveFallbackFile(
   args: {
     role: CodingRole;
     userRequest: string;
@@ -91,61 +301,128 @@ function normalizeBundle(
     existingFiles: string[];
     workspaceContextFiles?: Array<{ path: string; content: string }>;
   },
-  bundle: GeneratedCodeBundle,
-): GeneratedCodeBundle {
-  const normalizedFiles = bundle.files.map((file) => ({
-    ...file,
-    path: normalizeGeneratedPath(file.path),
-  }));
-
-  const hasDuplicatePath = normalizedFiles.some(
-    (file, index) => normalizedFiles.findIndex((candidate) => candidate.path === file.path) !== index,
+  targetFile: GeneratedCodePlanFile,
+): GeneratedCodeFile | undefined {
+  const existing = args.workspaceContextFiles?.find(
+    (file) => normalizeGeneratedPath(file.path) === normalizeGeneratedPath(targetFile.path),
   );
-  const hasInvalidPath = normalizedFiles.some((file) => !isAllowedRolePath(args.role, file.path));
-
-  if (hasDuplicatePath || hasInvalidPath) {
-    return buildFallbackCodeBundle(args);
+  if (existing) {
+    return {
+      path: normalizeGeneratedPath(targetFile.path),
+      purpose: targetFile.purpose,
+      content: existing.content,
+    };
   }
 
-  const hydrated = hydrateBundle(args, {
-    ...bundle,
-    files: normalizedFiles,
-  });
-  const rewritten = rewriteBundleRelativeImports(args, hydrated);
-
-  if (!isBundleSane(rewritten)) {
-    return buildFallbackCodeBundle(args);
+  const scaffoldFile = buildFallbackCodeBundle(args).files.find(
+    (file) => normalizeGeneratedPath(file.path) === normalizeGeneratedPath(targetFile.path),
+  );
+  if (scaffoldFile) {
+    return {
+      path: normalizeGeneratedPath(scaffoldFile.path),
+      purpose: scaffoldFile.purpose,
+      content: scaffoldFile.content,
+    };
   }
 
-  return rewritten;
+  return undefined;
 }
 
-function hydrateBundle(
-  args: {
-    role: CodingRole;
-    userRequest: string;
-    messages: ChatMessage[];
-    buildBrief: BuildBrief;
-    task: ImplementationPlan["tasks"][number];
-    existingFiles: string[];
-  },
-  bundle: GeneratedCodeBundle,
-): GeneratedCodeBundle {
-  const fallback = buildFallbackCodeBundle(args);
-  const merged = new Map<string, GeneratedCodeFile>();
+function deriveDeterministicPlan(args: {
+  role: CodingRole;
+  buildBrief: BuildBrief;
+  task: ImplementationPlan["tasks"][number];
+  existingFiles: string[];
+  workspaceContextFiles?: Array<{ path: string; content: string }>;
+}): GeneratedCodePlan {
+  const candidatePaths = uniqueLines([
+    ...args.buildBrief.fileLayout.map((file) => normalizeGeneratedPath(file)),
+    ...(args.workspaceContextFiles?.map((file) => normalizeGeneratedPath(file.path)) ?? []),
+    ...roleDefaultPaths(args.role),
+  ]).filter((filePath) => isAllowedRolePath(args.role, filePath));
 
-  for (const file of fallback.files) {
-    merged.set(file.path, file);
-  }
-  for (const file of bundle.files) {
-    merged.set(file.path, file);
-  }
+  const files = candidatePaths.slice(0, 8).map((filePath) => ({
+    path: filePath,
+    purpose: inferPurpose(filePath, args.task.title),
+  }));
 
   return {
-    ...bundle,
-    files: [...merged.values()],
-    validation: [...new Set([...bundle.validation, ...fallback.validation])].slice(0, 6),
+    role: args.role,
+    summary: `Derived a deterministic ${args.role} file plan from the build brief and task ownership.`,
+    files,
+    validation: uniqueLines([
+      ...args.task.acceptanceCriteria,
+      `All ${args.role} files must stay within the assigned path boundary.`,
+    ]).slice(0, 6),
   };
+}
+
+function roleDefaultPaths(role: CodingRole): string[] {
+  if (role === "backend") {
+    return ["package.json", "tsconfig.json", "src/shared/contracts.ts", "src/server.ts"];
+  }
+  if (role === "frontend") {
+    return ["public/index.html", "public/app.js", "public/styles.css"];
+  }
+  if (role === "ai") {
+    return ["src/lib/domain.ts"];
+  }
+  if (role === "test") {
+    return ["tests/bootstrap.test.mjs", "tests/contracts.test.mjs"];
+  }
+  return [".env.example", "Dockerfile", "ops/README.md"];
+}
+
+function inferPurpose(filePath: string, taskTitle: string): string {
+  const normalized = normalizeGeneratedPath(filePath);
+  if (normalized === "package.json") {
+    return "Package scripts and development dependencies";
+  }
+  if (normalized === "tsconfig.json") {
+    return "TypeScript compiler configuration";
+  }
+  if (normalized.endsWith("server.ts")) {
+    return `Server entry point for ${taskTitle}`;
+  }
+  if (normalized.endsWith("contracts.ts")) {
+    return `Shared contracts needed by ${taskTitle}`;
+  }
+  if (normalized.endsWith("domain.ts")) {
+    return `Domain logic for ${taskTitle}`;
+  }
+  if (normalized.endsWith("index.html")) {
+    return `Primary document shell for ${taskTitle}`;
+  }
+  if (normalized.endsWith("app.js")) {
+    return `Browser interaction logic for ${taskTitle}`;
+  }
+  if (normalized.endsWith("styles.css")) {
+    return `Visual system for ${taskTitle}`;
+  }
+  if (normalized.endsWith(".test.mjs")) {
+    return `Verification coverage for ${taskTitle}`;
+  }
+  if (normalized === ".env.example") {
+    return "Environment defaults for local execution";
+  }
+  if (normalized === "Dockerfile") {
+    return "Container runtime configuration";
+  }
+  if (normalized.startsWith("ops/")) {
+    return `Operational notes for ${taskTitle}`;
+  }
+  return `File owned by the current task: ${taskTitle}`;
+}
+
+function mergeCurrentAndRevisedFiles(currentFiles: GeneratedCodeFile[], revisedFiles: GeneratedCodeFile[]): GeneratedCodeFile[] {
+  const merged = new Map<string, GeneratedCodeFile>();
+  for (const file of currentFiles) {
+    merged.set(normalizeGeneratedPath(file.path), file);
+  }
+  for (const file of revisedFiles) {
+    merged.set(normalizeGeneratedPath(file.path), file);
+  }
+  return [...merged.values()];
 }
 
 function rewriteBundleRelativeImports(
@@ -156,7 +433,6 @@ function rewriteBundleRelativeImports(
 ): GeneratedCodeBundle {
   const knownPaths = new Set<string>([
     ...args.existingFiles.map((item) => normalizeGeneratedPath(item)),
-    ...listFallbackProjectPaths(),
     ...bundle.files.map((file) => file.path),
   ]);
 
@@ -164,6 +440,118 @@ function rewriteBundleRelativeImports(
     ...bundle,
     files: bundle.files.map((file) => rewriteRelativeImports(file, knownPaths)),
   };
+}
+
+function recoverBundleFromWorkspace(
+  args: {
+    role: CodingRole;
+    userRequest: string;
+    messages: ChatMessage[];
+    buildBrief: BuildBrief;
+    task: ImplementationPlan["tasks"][number];
+    existingFiles: string[];
+    workspaceContextFiles?: Array<{ path: string; content: string }>;
+  },
+  plan?: GeneratedCodePlan,
+): GeneratedCodeBundle {
+  const targetPaths = new Set(
+    plan?.files.map((file) => normalizeGeneratedPath(file.path)).filter((filePath) => isAllowedRolePath(args.role, filePath)) ??
+      [],
+  );
+  const recoveredFiles = (args.workspaceContextFiles ?? [])
+    .map((file) => ({
+      path: normalizeGeneratedPath(file.path),
+      purpose: inferPurpose(file.path, "existing workspace recovery"),
+      content: file.content,
+    }))
+    .filter((file) => isAllowedRolePath(args.role, file.path))
+    .filter((file) => targetPaths.size === 0 || targetPaths.has(file.path))
+    .slice(0, 8);
+
+  if (recoveredFiles.length === 0) {
+    const fallbackBundle = buildFallbackCodeBundle(args);
+    const fallbackFiles = fallbackBundle.files
+      .map((file) => ({
+        ...file,
+        path: normalizeGeneratedPath(file.path),
+      }))
+      .filter((file) => isAllowedRolePath(args.role, file.path))
+      .filter((file) => targetPaths.size === 0 || targetPaths.has(file.path));
+
+    if (fallbackFiles.length > 0) {
+      return generatedCodeBundleSchema.parse({
+        role: args.role,
+        summary: `Recovered ${args.role} with deterministic fallback files after generation could not be reused from the workspace.`,
+        files: fallbackFiles,
+        validation:
+          plan?.validation.length && plan.validation.length >= 2
+            ? plan.validation.slice(0, 6)
+            : fallbackBundle.validation.slice(0, 6),
+      });
+    }
+
+    const roleWideFallbackFiles = fallbackBundle.files
+      .map((file) => ({
+        ...file,
+        path: normalizeGeneratedPath(file.path),
+      }))
+      .filter((file) => isAllowedRolePath(args.role, file.path));
+
+    if (roleWideFallbackFiles.length > 0) {
+      return generatedCodeBundleSchema.parse({
+        role: args.role,
+        summary: `Recovered ${args.role} with role-level deterministic fallback files because the planned targets were not reusable yet.`,
+        files: roleWideFallbackFiles,
+        validation: fallbackBundle.validation.slice(0, 6),
+      });
+    }
+
+    const planHint = targetPaths.size > 0 ? ` Target files: ${[...targetPaths].join(", ")}.` : "";
+    throw new Error(`Code generation for ${args.role} produced no recoverable files.${planHint}`);
+  }
+
+  return generatedCodeBundleSchema.parse({
+    role: args.role,
+    summary: `Recovered ${recoveredFiles.length} ${args.role} file(s) from the existing workspace context.`,
+    files: recoveredFiles,
+    validation:
+      plan?.validation.length && plan.validation.length >= 2
+        ? plan.validation.slice(0, 6)
+        : [
+            `Recovered ${args.role} files must remain valid for the existing workspace.`,
+            `The ${args.role} owner must revise recovered files instead of rebuilding from scratch.`,
+          ],
+  });
+}
+
+function safelyRecoverOrFallback(
+  args: {
+    role: CodingRole;
+    userRequest: string;
+    messages: ChatMessage[];
+    buildBrief: BuildBrief;
+    task: ImplementationPlan["tasks"][number];
+    existingFiles: string[];
+    workspaceContextFiles?: Array<{ path: string; content: string }>;
+  },
+  plan?: GeneratedCodePlan,
+): GeneratedCodeBundle {
+  try {
+    return recoverBundleFromWorkspace(args, plan);
+  } catch {
+    const fallback = buildFallbackCodeBundle(args);
+    return generatedCodeBundleSchema.parse({
+      role: args.role,
+      summary: `Recovered ${args.role} with deterministic fallback files because workspace recovery was unavailable.`,
+      files: fallback.files
+        .map((file) => ({
+          ...file,
+          path: normalizeGeneratedPath(file.path),
+        }))
+        .filter((file) => isAllowedRolePath(args.role, file.path)),
+      validation: fallback.validation.slice(0, 6),
+    });
+  }
 }
 
 function rewriteRelativeImports(file: GeneratedCodeFile, knownPaths: Set<string>): GeneratedCodeFile {
@@ -195,165 +583,6 @@ function rewriteRelativeImports(file: GeneratedCodeFile, knownPaths: Set<string>
     ...file,
     content,
   };
-}
-
-function normalizeRevisionBundle(
-  args: {
-    role: CodingRole;
-    existingFiles: string[];
-    currentFiles: GeneratedCodeFile[];
-    reviews: Array<{
-      reviewer: CodingRole;
-      reactionType: "challenge" | "support" | "refine";
-      approvedAreas: string[];
-      findings: string[];
-      adjustment: string;
-    }>;
-  },
-  bundle: GeneratedCodeBundle,
-): GeneratedCodeBundle {
-  const normalizedFiles = bundle.files.map((file) => ({
-    ...file,
-    path: normalizeGeneratedPath(file.path),
-  }));
-
-  const hasDuplicatePath = normalizedFiles.some(
-    (file, index) => normalizedFiles.findIndex((candidate) => candidate.path === file.path) !== index,
-  );
-  const hasInvalidPath = normalizedFiles.some((file) => !isAllowedRolePath(args.role, file.path));
-
-  if (hasDuplicatePath || hasInvalidPath) {
-    return buildCurrentBundle(args.role, args.currentFiles, args.reviews);
-  }
-
-  const merged = new Map<string, GeneratedCodeFile>();
-  for (const file of args.currentFiles) {
-    merged.set(file.path, file);
-  }
-  for (const file of normalizedFiles) {
-    merged.set(file.path, file);
-  }
-
-  const rewritten = rewriteBundleRelativeImports(
-    {
-      existingFiles: [...args.existingFiles, ...args.currentFiles.map((file) => file.path)],
-    },
-    {
-      role: args.role,
-      summary: bundle.summary,
-      files: [...merged.values()],
-      validation: uniqueLines([...bundle.validation, ...collectReviewHints(args.reviews)]).slice(0, 6),
-    },
-  );
-
-  if (!isBundleSane(rewritten)) {
-    return buildCurrentBundle(args.role, args.currentFiles, args.reviews);
-  }
-
-  return rewritten;
-}
-
-function isBundleSane(bundle: GeneratedCodeBundle): boolean {
-  if (bundle.files.some((file) => PLACEHOLDER_PATTERN.test(file.content))) {
-    return false;
-  }
-
-  const packageJsonFile = bundle.files.find((file) => file.path === "package.json");
-  if (packageJsonFile && !isPackageJsonSafe(packageJsonFile.content)) {
-    return false;
-  }
-
-  const knownPaths = new Set<string>([
-    ...listFallbackProjectPaths(),
-    ...bundle.files.map((file) => file.path),
-  ]);
-
-  for (const file of bundle.files) {
-    if (!isFileContentSane(file, knownPaths)) {
-      return false;
-    }
-  }
-
-  const htmlFile = bundle.files.find((file) => file.path === "public/index.html");
-  const appJsFile = bundle.files.find((file) => file.path === "public/app.js");
-  const serverFile = bundle.files.find((file) => file.path === "src/server.ts");
-
-  if (htmlFile && !htmlFile.content.includes('src="/app.js"')) {
-    return false;
-  }
-  if (appJsFile && !appJsFile.content.includes("/api/bootstrap")) {
-    return false;
-  }
-  if (serverFile && !serverFile.content.includes("/api/bootstrap")) {
-    return false;
-  }
-
-  return true;
-}
-
-function isPackageJsonSafe(content: string): boolean {
-  try {
-    const parsed = JSON.parse(content) as {
-      dependencies?: Record<string, string>;
-      devDependencies?: Record<string, string>;
-    };
-    const dependencies = Object.keys(parsed.dependencies ?? {});
-    if (dependencies.length > 0) {
-      return false;
-    }
-    return Object.keys(parsed.devDependencies ?? {}).every((item) => SAFE_DEV_DEPENDENCIES.has(item));
-  } catch {
-    return false;
-  }
-}
-
-function isFileContentSane(file: GeneratedCodeFile, knownPaths: Set<string>): boolean {
-  if (
-    file.path !== "Dockerfile" &&
-    file.path !== ".env.example" &&
-    !/\.(?:html|css|[cm]?[jt]sx?|json|md)$/u.test(file.path)
-  ) {
-    return false;
-  }
-
-  for (const specifier of extractImportSpecifiers(file.content)) {
-    if (specifier.startsWith("./") || specifier.startsWith("../")) {
-      if (!resolveRelativeTarget(file.path, specifier, knownPaths)) {
-        return false;
-      }
-      continue;
-    }
-
-    if (specifier.startsWith("/") || specifier.startsWith("http://") || specifier.startsWith("https://")) {
-      continue;
-    }
-
-    if (!BUILTIN_IMPORTS.has(specifier)) {
-      return false;
-    }
-  }
-
-  return true;
-}
-
-function extractImportSpecifiers(content: string): string[] {
-  const matches: string[] = [];
-  const patterns = [
-    /from\s+["']([^"']+)["']/g,
-    /import\s*\(\s*["']([^"']+)["']\s*\)/g,
-    /require\(\s*["']([^"']+)["']\s*\)/g,
-  ];
-
-  for (const pattern of patterns) {
-    for (const match of content.matchAll(pattern)) {
-      const specifier = match[1];
-      if (specifier) {
-        matches.push(specifier);
-      }
-    }
-  }
-
-  return matches;
 }
 
 function resolveRelativeTarget(importerPath: string, specifier: string, knownPaths: Set<string>): string | undefined {
@@ -409,6 +638,60 @@ function toImportSpecifier(importerPath: string, targetPath: string): string {
   }
 
   return withDotPrefix;
+}
+
+function isGeneratedFileSane(file: GeneratedCodeFile): boolean {
+  if (PLACEHOLDER_PATTERN.test(file.content)) {
+    return false;
+  }
+  if (file.content.trim().length === 0) {
+    return false;
+  }
+  if (/\.(?:[cm]?js)$/u.test(file.path) && !passesNodeSyntaxCheck(file)) {
+    return false;
+  }
+  return true;
+}
+
+function passesNodeSyntaxCheck(file: GeneratedCodeFile): boolean {
+  const tempDir = mkdtempSync(path.join(tmpdir(), "claw-codegen-"));
+  const tempFile = path.join(tempDir, syntaxCheckFileName(file));
+
+  try {
+    writeFileSync(tempFile, file.content, "utf8");
+    const result = spawnSync(process.execPath, ["--check", tempFile], {
+      encoding: "utf8",
+      stdio: "pipe",
+    });
+    return result.status === 0;
+  } catch {
+    return false;
+  } finally {
+    rmSync(tempDir, { force: true, recursive: true });
+  }
+}
+
+function syntaxCheckFileName(file: GeneratedCodeFile): string {
+  if (file.path.endsWith(".mjs")) {
+    return "syntax-check.mjs";
+  }
+  if (file.path.endsWith(".cjs")) {
+    return "syntax-check.cjs";
+  }
+  if (/\b(?:import|export)\b/u.test(file.content)) {
+    return "syntax-check.mjs";
+  }
+  return "syntax-check.js";
+}
+
+function isBundleSane(bundle: GeneratedCodeBundle): boolean {
+  if (bundle.files.some((file) => !isGeneratedFileSane(file))) {
+    return false;
+  }
+  if (bundle.files.length === 0) {
+    return false;
+  }
+  return true;
 }
 
 function buildCurrentBundle(

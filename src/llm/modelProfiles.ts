@@ -18,7 +18,7 @@ export type StructuredGenerationProfile = {
   repeatPenalty?: number;
 };
 
-type ModelFamily = "qwen3" | "qwen-coder" | "deepseek" | "llama" | "gemma" | "mistral" | "generic";
+type ModelFamily = "qwen" | "qwen-coder" | "deepseek" | "llama" | "gemma" | "mistral" | "generic";
 
 const BASE_STAGE_PROFILES: Record<GenerationStage, StructuredGenerationProfile> = {
   "pm-initial": { temperature: 0.12, numPredict: 480, maxRetries: 4, topP: 0.88, topK: 30, repeatPenalty: 1.02 },
@@ -41,16 +41,17 @@ const BASE_STAGE_PROFILES: Record<GenerationStage, StructuredGenerationProfile> 
 
 const FAMILY_OVERRIDES: Partial<Record<ModelFamily, Partial<Record<GenerationStage, Partial<StructuredGenerationProfile>>>>> =
   {
-    qwen3: {
-      "pm-initial": { numPredict: 520, maxRetries: 5, topP: 0.82, topK: 20 },
-      "pm-final": { numPredict: 720, maxRetries: 5, topP: 0.78, topK: 20 },
+    qwen: {
+      "pm-initial": { numPredict: 560, maxRetries: 5, topP: 0.82, topK: 20 },
+      "pm-final": { numPredict: 800, maxRetries: 5, topP: 0.78, topK: 20 },
       clarification: { numPredict: 500, maxRetries: 5, topP: 0.76, topK: 16 },
-      discussion: { numPredict: 640, maxRetries: 5, topP: 0.82, topK: 24 },
-      spec: { numPredict: 920, maxRetries: 5, topP: 0.78, topK: 20 },
-      "implementation-plan": { numPredict: 820, maxRetries: 5, topP: 0.78, topK: 18 },
-      "build-brief": { numPredict: 920, maxRetries: 5, topP: 0.76, topK: 18 },
-      "code-review": { temperature: 0.08, numPredict: 960, maxRetries: 5, topP: 0.76, topK: 18, repeatPenalty: 1.06 },
-      codegen: { temperature: 0.05, numPredict: 1700, maxRetries: 4, topP: 0.72, topK: 18, repeatPenalty: 1.1 },
+      discussion: { numPredict: 700, maxRetries: 5, topP: 0.82, topK: 24 },
+      spec: { numPredict: 1100, maxRetries: 5, topP: 0.78, topK: 20 },
+      "implementation-plan": { numPredict: 900, maxRetries: 5, topP: 0.78, topK: 18 },
+      "build-brief": { numPredict: 1000, maxRetries: 5, topP: 0.76, topK: 18 },
+      "code-review": { temperature: 0.08, numPredict: 1100, maxRetries: 5, topP: 0.76, topK: 18, repeatPenalty: 1.06 },
+      // 파일 단위 생성으로 전환됐으므로 파일 하나당 충분한 토큰 확보
+      codegen: { temperature: 0.05, numPredict: 2400, maxRetries: 4, topP: 0.72, topK: 18, repeatPenalty: 1.08 },
     },
     "qwen-coder": {
       "code-review": { temperature: 0.06, numPredict: 1100, maxRetries: 4, topP: 0.72, topK: 16, repeatPenalty: 1.08 },
@@ -97,11 +98,11 @@ export function resolveGenerationProfile(model: string, stage: GenerationStage):
 function detectModelFamily(model: string): ModelFamily {
   const normalized = model.toLowerCase();
 
-  if (normalized.includes("qwen3")) {
-    return "qwen3";
-  }
   if (normalized.includes("coder") && normalized.includes("qwen")) {
     return "qwen-coder";
+  }
+  if (normalized.includes("qwen")) {
+    return "qwen";
   }
   if (normalized.includes("deepseek")) {
     return "deepseek";

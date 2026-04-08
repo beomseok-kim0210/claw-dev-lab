@@ -1,1 +1,7 @@
-export { buildHarnessPrompt, renderDiscussionContext, renderMessageIds, renderTranscript } from "../harness/promptHarness.js";
+export {
+  buildConversationMessages,
+  buildHarnessPrompt,
+  renderDiscussionContext,
+  renderMessageIds,
+  renderTranscript,
+} from "../harness/promptHarness.js";

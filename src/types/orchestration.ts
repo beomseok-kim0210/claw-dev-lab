@@ -70,6 +70,8 @@ export type OrchestrationPhaseKey =
 
 export type OrchestrationPhaseState = "pending" | "active" | "completed" | "failed";
 
+export type ProjectStartMode = "new" | "continue";
+
 export type OrchestrationPhaseUpdate = {
   key: OrchestrationPhaseKey;
   label: string;

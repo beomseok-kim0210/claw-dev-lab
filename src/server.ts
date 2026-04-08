@@ -1,5 +1,5 @@
 import { createReadStream } from "node:fs";
-import { stat } from "node:fs/promises";
+import { mkdir, stat } from "node:fs/promises";
 import { createServer } from "node:http";
 import path from "node:path";
 import { URL } from "node:url";
@@ -10,12 +10,15 @@ import { loadServerConfig, resolveDefaultTargetDirectory } from "./config.js";
 import { OllamaClient } from "./llm/ollamaClient.js";
 import { MultiAgentOrchestrator } from "./orchestrator/multiAgentOrchestrator.js";
 import { listWorkspaceFiles, loadProjectMemory } from "./orchestrator/projectMemory.js";
+import { startWorkspacePreview } from "./server/previewManager.js";
 import { SessionStore } from "./server/sessionStore.js";
 import type { ClarificationAnswer } from "./types/orchestration.js";
+import type { ProjectStartMode } from "./types/orchestration.js";
 
 const createSessionSchema = z.object({
   request: z.string().trim().min(10).max(4000),
   targetDirectory: z.string().trim().min(1).max(500).optional(),
+  startMode: z.enum(["new", "continue"]).optional(),
 });
 
 const clarificationAnswerSchema = z.object({
@@ -29,11 +32,24 @@ const submitClarificationSchema = z.object({
 
 const config = loadServerConfig();
 const sessionStore = new SessionStore();
+
+// 토론/추론/리뷰 전용 클라이언트 (qwen3.5 등 reasoning 모델)
 const client = new OllamaClient({
   baseUrl: config.ollamaBaseUrl,
   model: config.ollamaModel,
   timeoutMs: config.timeoutMs,
 });
+
+// 코드 생성 전용 클라이언트
+// OLLAMA_CODEGEN_MODEL 미설정 시 → reasoning 모델과 동일 (기존 동작 유지)
+// OLLAMA_CODEGEN_MODEL=qwen2.5-coder:7b 설정 시 → 코드 특화 모델로 분리
+const codegenClient = config.ollamaCodegenModel !== config.ollamaModel
+  ? new OllamaClient({
+      baseUrl: config.ollamaBaseUrl,
+      model: config.ollamaCodegenModel,
+      timeoutMs: config.timeoutMs,
+    })
+  : client;
 
 const publicRoot = path.resolve(config.cwd, "public");
 
@@ -46,6 +62,7 @@ const server = createServer(async (req, res) => {
       return sendJson(res, 200, {
         ok: true,
         model: config.ollamaModel,
+        codegenModel: config.ollamaCodegenModel,
         baseUrl: config.ollamaBaseUrl,
         defaultTargetDirectory: resolveDefaultTargetDirectory(),
       });
@@ -57,11 +74,18 @@ const server = createServer(async (req, res) => {
       return sendJson(res, 200, preview);
     }
 
+    if (method === "GET" && requestUrl.pathname === "/api/sessions") {
+      const sessions = await sessionStore.listSessions();
+      return sendJson(res, 200, sessions);
+    }
+
     if (method === "POST" && requestUrl.pathname === "/api/sessions") {
       const payload = createSessionSchema.parse(await readJson(req));
-      const targetDirectory = normalizeTargetDirectory(payload.targetDirectory);
-      const session = sessionStore.createSession(payload.request, targetDirectory);
-      void runSession(session.id, payload.request, targetDirectory);
+      const startMode = payload.startMode ?? "continue";
+      const requestedTargetDirectory = normalizeTargetDirectory(payload.targetDirectory);
+      const targetDirectory = await resolveSessionTargetDirectory(requestedTargetDirectory, startMode);
+      const session = sessionStore.createSession(payload.request, targetDirectory, startMode);
+      void runSession(session.id, payload.request, targetDirectory, startMode);
       return sendJson(res, 202, session);
     }
 
@@ -125,13 +149,19 @@ server.listen(config.port, () => {
   process.stdout.write(`멀티 에이전트 웹 UI가 http://127.0.0.1:${config.port} 에서 실행 중입니다.\n`);
 });
 
-async function runSession(sessionId: string, userRequest: string, targetDirectory?: string): Promise<void> {
+async function runSession(
+  sessionId: string,
+  userRequest: string,
+  targetDirectory?: string,
+  startMode: ProjectStartMode = "continue",
+): Promise<void> {
   sessionStore.setStatus(sessionId, "running");
 
   try {
     const sessionOutputDir = path.resolve(config.outputDir, sessionId);
     const orchestrator = new MultiAgentOrchestrator({
       client,
+      codegenClient,
       outputDir: sessionOutputDir,
       ...(targetDirectory
         ? {
@@ -139,6 +169,7 @@ async function runSession(sessionId: string, userRequest: string, targetDirector
             codePathPrefix: "",
           }
         : {}),
+      projectStartMode: startMode,
       hooks: {
         onMessage(message) {
           sessionStore.appendMessage(sessionId, message);
@@ -163,10 +194,50 @@ async function runSession(sessionId: string, userRequest: string, targetDirector
 
     await orchestrator.run(userRequest);
     sessionStore.setStatus(sessionId, "completed");
+
+    if (targetDirectory) {
+      sessionStore.setPreview(sessionId, {
+        status: "starting",
+        detail: "생성된 앱 미리보기를 준비 중입니다.",
+        targetDirectory,
+        updatedAt: new Date().toISOString(),
+      });
+
+      void (async () => {
+        const preview = await startWorkspacePreview(targetDirectory);
+        sessionStore.setPreview(sessionId, {
+          status: preview.ok ? "ready" : "failed",
+          detail: preview.detail,
+          ...(preview.ok ? { url: preview.url } : {}),
+          targetDirectory,
+          updatedAt: new Date().toISOString(),
+        });
+      })();
+    }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     sessionStore.markActivePhaseFailed(sessionId, message);
     sessionStore.setStatus(sessionId, "failed", message);
+    if (targetDirectory) {
+      sessionStore.setPreview(sessionId, {
+        status: "starting",
+        detail: "실패했지만 지금까지 생성된 코드를 미리보기로 준비 중입니다.",
+        targetDirectory,
+        updatedAt: new Date().toISOString(),
+      });
+      void (async () => {
+        const preview = await startWorkspacePreview(targetDirectory);
+        sessionStore.setPreview(sessionId, {
+          status: preview.ok ? "ready" : "failed",
+          detail: preview.ok
+            ? "검증은 실패했지만 지금까지 생성된 코드를 미리보기로 확인할 수 있습니다."
+            : preview.detail,
+          ...(preview.ok ? { url: preview.url } : {}),
+          targetDirectory,
+          updatedAt: new Date().toISOString(),
+        });
+      })();
+    }
   }
 }
 
@@ -314,6 +385,57 @@ async function inspectProjectTarget(targetDirectory: string | undefined): Promis
     workspacePreview: workspaceFiles.slice(0, 8),
     unresolvedFindings: projectMemory?.unresolvedFindings.slice(0, 4) ?? [],
   };
+}
+
+async function resolveSessionTargetDirectory(
+  targetDirectory: string | undefined,
+  startMode: ProjectStartMode,
+): Promise<string | undefined> {
+  const resolvedTarget = targetDirectory ?? resolveDefaultTargetDirectory();
+  if (startMode !== "new") {
+    return resolvedTarget;
+  }
+
+  const preview = await inspectProjectTarget(resolvedTarget);
+  if (!preview.exists && !preview.hasProjectMemory && preview.workspaceFileCount === 0) {
+    return resolvedTarget;
+  }
+  if (preview.exists && !preview.hasProjectMemory && preview.workspaceFileCount === 0) {
+    return resolvedTarget;
+  }
+
+  const freshTarget = await allocateFreshProjectDirectory(resolvedTarget);
+  await mkdir(freshTarget, { recursive: true });
+  return freshTarget;
+}
+
+async function allocateFreshProjectDirectory(baseTarget: string): Promise<string> {
+  const parsed = path.parse(baseTarget);
+  const stem = parsed.ext ? parsed.name : parsed.base;
+  const extension = parsed.ext ?? "";
+  const parent = parsed.dir || path.dirname(baseTarget);
+  const stamp = buildDirectoryTimestamp(new Date());
+
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    const suffix = attempt === 0 ? stamp : `${stamp}-${attempt + 1}`;
+    const candidateName = `${stem}-${suffix}${extension}`;
+    const candidatePath = path.join(parent, candidateName);
+    if (!(await isDirectory(candidatePath))) {
+      return candidatePath;
+    }
+  }
+
+  return path.join(parent, `${stem}-${Date.now()}${extension}`);
+}
+
+function buildDirectoryTimestamp(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  const hours = String(date.getHours()).padStart(2, "0");
+  const minutes = String(date.getMinutes()).padStart(2, "0");
+  const seconds = String(date.getSeconds()).padStart(2, "0");
+  return `${year}${month}${day}-${hours}${minutes}${seconds}`;
 }
 
 async function isDirectory(targetPath: string): Promise<boolean> {

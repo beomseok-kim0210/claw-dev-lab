@@ -1,24 +1,42 @@
+import { resolveGenerationProfile } from "../llm/modelProfiles.js";
+import { OllamaClient } from "../llm/ollamaClient.js";
+import { buildReactionPrompt } from "../prompts/reaction.js";
+import { buildConversationMessages } from "../prompts/shared.js";
 import type { ChatMessage } from "../types/chat.js";
-import type { AgentReaction } from "../types/contracts.js";
+import { agentReactionSchema, type AgentReaction } from "../types/contracts.js";
 
 export async function runAgentReaction(args: {
-  client?: unknown;
+  client?: OllamaClient;
   role: "backend" | "frontend" | "ai" | "infra" | "test";
   userRequest: string;
   messages: ChatMessage[];
   targetMessage: ChatMessage;
 }): Promise<AgentReaction> {
-  const reactionType = pickReactionType(args.role, args.targetMessage.role);
+  if (args.client) {
+    try {
+      const prompt = buildReactionPrompt({
+        role: args.role,
+        userRequest: args.userRequest,
+        messages: args.messages,
+        targetMessage: args.targetMessage,
+      });
+      const profile = resolveGenerationProfile(args.client.getModelName(), "discussion");
 
-  return {
-    headline: `${roleLabel(args.role)} response`,
-    reactionType,
-    targetMessageId: args.targetMessage.id,
-    position: `${roleLabel(args.role)} is reacting to the previous ${args.targetMessage.role} message from its own delivery angle.`,
-    reaction: buildReactionBody(args.role, reactionType, args.targetMessage),
-    adjustment: buildAdjustment(args.role, args.targetMessage),
-    references: takeReferences(args.messages),
-  };
+      const result = await args.client.generateStructured({
+        ...prompt,
+        conversationMessages: buildConversationMessages(args.messages),
+        schema: agentReactionSchema,
+        ...profile,
+      });
+
+      // targetMessageId must match — enforce it
+      return { ...result, targetMessageId: args.targetMessage.id };
+    } catch {
+      // fall through to rule-based fallback
+    }
+  }
+
+  return buildRuleBasedReaction(args);
 }
 
 export function formatAgentReaction(reaction: AgentReaction): string {
@@ -31,6 +49,24 @@ export function formatAgentReaction(reaction: AgentReaction): string {
     `Adjustment: ${reaction.adjustment}`,
     `References: ${reaction.references.join(", ")}`,
   ].join("\n");
+}
+
+function buildRuleBasedReaction(args: {
+  role: "backend" | "frontend" | "ai" | "infra" | "test";
+  messages: ChatMessage[];
+  targetMessage: ChatMessage;
+}): AgentReaction {
+  const reactionType = pickReactionType(args.role, args.targetMessage.role);
+
+  return {
+    headline: `${roleLabel(args.role)} response`,
+    reactionType,
+    targetMessageId: args.targetMessage.id,
+    position: `${roleLabel(args.role)} is reacting to the previous ${args.targetMessage.role} message from its own delivery angle.`,
+    reaction: buildReactionBody(args.role, reactionType, args.targetMessage),
+    adjustment: buildAdjustment(args.role, args.targetMessage),
+    references: takeReferences(args.messages),
+  };
 }
 
 function pickReactionType(

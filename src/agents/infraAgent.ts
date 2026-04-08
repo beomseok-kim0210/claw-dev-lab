@@ -1,6 +1,7 @@
 import { resolveGenerationProfile } from "../llm/modelProfiles.js";
 import { OllamaClient } from "../llm/ollamaClient.js";
 import { buildInfraDiscussionPrompt, buildInfraSpecPrompt } from "../prompts/infra.js";
+import { buildConversationMessages } from "../prompts/shared.js";
 import type { ChatMessage } from "../types/chat.js";
 import {
   infraDiscussionSchema,
@@ -23,6 +24,7 @@ export async function runInfraDiscussion(args: {
   try {
     return await args.client.generateStructured({
       ...prompt,
+      conversationMessages: buildConversationMessages(args.messages),
       schema: infraDiscussionSchema,
       ...profile,
     });

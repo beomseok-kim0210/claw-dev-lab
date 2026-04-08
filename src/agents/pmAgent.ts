@@ -1,5 +1,6 @@
 import { resolveGenerationProfile } from "../llm/modelProfiles.js";
 import { OllamaClient } from "../llm/ollamaClient.js";
+import { buildConversationMessages } from "../prompts/shared.js";
 import { buildPmFinalPrompt, buildPmInitialPrompt } from "../prompts/pm.js";
 import type { ChatMessage } from "../types/chat.js";
 import {
@@ -21,6 +22,7 @@ export async function runPmInitialDiscussion(args: {
   try {
     return await args.client.generateStructured({
       ...prompt,
+      conversationMessages: buildConversationMessages(args.messages),
       schema: pmInitialDiscussionSchema,
       ...profile,
     });
@@ -40,6 +42,7 @@ export async function runPmFinalDecision(args: {
   try {
     return await args.client.generateStructured({
       ...prompt,
+      conversationMessages: buildConversationMessages(args.messages),
       schema: pmFinalDecisionSchema,
       ...profile,
     });

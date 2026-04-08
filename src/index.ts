@@ -34,7 +34,7 @@ function printHelp(): void {
   process.stdout.write('  npm run dev -- "build an AI support dashboard"\n');
   process.stdout.write("  npm run dev -- --example\n");
   process.stdout.write(
-    `  npm run dev -- --cwd E:\\repo --output-dir .\\artifacts --target-dir ${resolveDefaultTargetDirectory()} --model qwen3 "design a PRD workspace"\n\n`,
+    `  npm run dev -- --cwd E:\\repo --output-dir .\\artifacts --target-dir ${resolveDefaultTargetDirectory()} --model qwen3.5 "design a PRD workspace"\n\n`,
   );
   process.stdout.write("Flags:\n");
   process.stdout.write("  --help         Show this help text\n");
@@ -287,6 +287,14 @@ async function main(): Promise<void> {
     model: config.ollamaModel,
     timeoutMs: config.timeoutMs,
   });
+  const codegenClient =
+    config.ollamaCodegenModel !== config.ollamaModel
+      ? new OllamaClient({
+          baseUrl: config.ollamaBaseUrl,
+          model: config.ollamaCodegenModel,
+          timeoutMs: config.timeoutMs,
+        })
+      : client;
 
   const pipedAnswers = input.isTTY ? [] : await readPipedAnswers();
   const rl = input.isTTY ? readline.createInterface({ input, output }) : undefined;
@@ -294,6 +302,7 @@ async function main(): Promise<void> {
   try {
     const orchestrator = new MultiAgentOrchestrator({
       client,
+      codegenClient,
       outputDir: config.outputDir,
       ...(parsed.targetDir
         ? {
@@ -337,6 +346,9 @@ async function main(): Promise<void> {
     });
 
     process.stdout.write(`Model: ${config.ollamaModel} (${config.ollamaBaseUrl})\n`);
+    if (config.ollamaCodegenModel !== config.ollamaModel) {
+      process.stdout.write(`Codegen Model: ${config.ollamaCodegenModel}\n`);
+    }
     process.stdout.write(`Artifact directory: ${config.outputDir}\n`);
     if (parsed.targetDir) {
       process.stdout.write(`Code target directory: ${parsed.targetDir}\n`);

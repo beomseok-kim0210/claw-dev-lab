@@ -7,6 +7,17 @@ import { isAllowedRolePath, normalizeGeneratedPath, type CodingRole } from "../a
 import type { PMFinalDecision, ImplementationPlan } from "../types/contracts.js";
 import { buildBriefSchema, type BuildBrief } from "../types/generation.js";
 
+const CODING_ROLES = ["backend", "frontend", "ai", "infra", "test"] as const;
+
+const roleProjectMemorySchema = z
+  .object({
+    ownedFiles: z.array(z.string().min(1)).max(24),
+    recentFocus: z.array(z.string().min(1)).max(8),
+    openFindings: z.array(z.string().min(1)).max(8),
+    validationPriorities: z.array(z.string().min(1)).max(8),
+  })
+  .strict();
+
 const projectMemorySchema = z
   .object({
     version: z.literal(1),
@@ -28,10 +39,20 @@ const projectMemorySchema = z
     latestArtifacts: z.array(z.string().min(1)).max(200),
     workspaceFiles: z.array(z.string().min(1)).max(200),
     unresolvedFindings: z.array(z.string().min(1)).max(20),
+    roleMemories: z
+      .object({
+        backend: roleProjectMemorySchema.optional(),
+        frontend: roleProjectMemorySchema.optional(),
+        ai: roleProjectMemorySchema.optional(),
+        infra: roleProjectMemorySchema.optional(),
+        test: roleProjectMemorySchema.optional(),
+      })
+      .strict(),
   })
   .strict();
 
 export type ProjectMemory = z.infer<typeof projectMemorySchema>;
+export type RoleProjectMemory = z.infer<typeof roleProjectMemorySchema>;
 
 type PersistProjectMemoryArgs = {
   projectRoot: string;
@@ -84,6 +105,7 @@ export async function persistProjectMemory(args: PersistProjectMemoryArgs): Prom
     latestArtifacts: unique(args.artifactFiles).slice(0, 200),
     workspaceFiles: unique(args.workspaceFiles).slice(0, 200),
     unresolvedFindings: unique(args.unresolvedFindings).slice(0, 20),
+    roleMemories: buildRoleMemories(args),
   };
 
   const memoryPath = resolveProjectMemoryPath(args.projectRoot);
@@ -123,9 +145,39 @@ export function formatProjectMemoryMessage(memory: ProjectMemory): string {
   ].join("\n");
 }
 
+export function formatRoleProjectMemoryMessage(role: CodingRole, memory: ProjectMemory): string | undefined {
+  const roleMemory = memory.roleMemories[role];
+  if (!roleMemory) {
+    return undefined;
+  }
+
+  return [
+    `Title: ${role} specialist memory loaded`,
+    `Project Root: ${memory.projectRoot}`,
+    "Owned Files:",
+    ...(roleMemory.ownedFiles.length > 0 ? roleMemory.ownedFiles.map((item) => `- ${item}`) : ["- No owned files recorded yet."]),
+    "Recent Focus:",
+    ...(roleMemory.recentFocus.length > 0 ? roleMemory.recentFocus.map((item) => `- ${item}`) : ["- No recent focus summary recorded yet."]),
+    "Open Findings:",
+    ...(roleMemory.openFindings.length > 0 ? roleMemory.openFindings.map((item) => `- ${item}`) : ["- No open findings were assigned to this role."]),
+    "Validation Priorities:",
+    ...(roleMemory.validationPriorities.length > 0
+      ? roleMemory.validationPriorities.map((item) => `- ${item}`)
+      : ["- No explicit validation priority was stored."]),
+    "Use this specialist memory as your baseline when you discuss, review, or revise code.",
+  ].join("\n");
+}
+
 export async function listWorkspaceFiles(projectRoot: string): Promise<string[]> {
   const discovered: string[] = [];
-  await walkWorkspace(projectRoot, "", discovered);
+  try {
+    await walkWorkspace(projectRoot, "", discovered);
+  } catch (error) {
+    if (isMissingDirectoryError(error)) {
+      return [];
+    }
+    throw error;
+  }
   return unique(discovered).sort();
 }
 
@@ -199,4 +251,82 @@ function rolePriority(role: CodingRole): string[] {
 
 function unique(items: string[]): string[] {
   return items.filter((item, index) => item.trim().length > 0 && items.indexOf(item) === index);
+}
+
+function isMissingDirectoryError(error: unknown): error is NodeJS.ErrnoException {
+  return error instanceof Error && "code" in error && error.code === "ENOENT";
+}
+
+function buildRoleMemories(args: PersistProjectMemoryArgs): ProjectMemory["roleMemories"] {
+  const byRole = Object.fromEntries(
+    CODING_ROLES.map((role) => [
+      role,
+      buildRoleMemory(role, args),
+    ]),
+  ) as ProjectMemory["roleMemories"];
+
+  return byRole;
+}
+
+function buildRoleMemory(role: CodingRole, args: PersistProjectMemoryArgs): RoleProjectMemory | undefined {
+  const task = args.implementationPlan.tasks.find((candidate) => candidate.owner === role);
+  const ownedFiles = unique(
+    args.artifactFiles
+      .map((file) => stripGeneratedPrefix(file))
+      .filter((file) => isAllowedRolePath(role, normalizeGeneratedPath(file))),
+  ).slice(0, 24);
+  const recentFocus = unique([
+    task?.title ?? "",
+    task?.goal ?? "",
+    ...(task?.deliverables ?? []),
+  ]).slice(0, 8);
+  const openFindings = unique(
+    args.unresolvedFindings.filter((finding) => findingTouchesRole(role, finding, ownedFiles)),
+  ).slice(0, 8);
+  const validationPriorities = unique([
+    ...(task?.acceptanceCriteria ?? []),
+    ...args.buildBrief.acceptanceChecks,
+  ]).slice(0, 8);
+
+  if (
+    ownedFiles.length === 0 &&
+    recentFocus.length === 0 &&
+    openFindings.length === 0 &&
+    validationPriorities.length === 0
+  ) {
+    return undefined;
+  }
+
+  return {
+    ownedFiles,
+    recentFocus,
+    openFindings,
+    validationPriorities,
+  };
+}
+
+function stripGeneratedPrefix(filePath: string): string {
+  const normalized = normalizeGeneratedPath(filePath);
+  return normalized.startsWith("generated-app/") ? normalized.slice("generated-app/".length) : normalized;
+}
+
+function findingTouchesRole(role: CodingRole, finding: string, ownedFiles: string[]): boolean {
+  const loweredFinding = finding.toLowerCase();
+  if (ownedFiles.some((file) => loweredFinding.includes(file.toLowerCase()))) {
+    return true;
+  }
+
+  if (role === "backend") {
+    return /(api|server|route|contract|backend|node|bootstrap)/iu.test(finding);
+  }
+  if (role === "frontend") {
+    return /(ui|screen|frontend|browser|style|mobile|interaction|html|css)/iu.test(finding);
+  }
+  if (role === "ai") {
+    return /(ai|model|analysis|insight|domain|recommend)/iu.test(finding);
+  }
+  if (role === "infra") {
+    return /(infra|docker|env|deploy|container|ops|runtime)/iu.test(finding);
+  }
+  return /(test|verify|contract|coverage|assert|check)/iu.test(finding);
 }

@@ -1,4 +1,6 @@
 import { randomUUID } from "node:crypto";
+import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
+import path from "node:path";
 
 import type { ChatMessage } from "../types/chat.js";
 import type { ClarificationPlan } from "../types/contracts.js";
@@ -8,6 +10,7 @@ import type {
   GeneratedArtifact,
   OrchestrationPhaseKey,
   OrchestrationPhaseUpdate,
+  ProjectStartMode,
 } from "../types/orchestration.js";
 import type {
   SessionArtifact,
@@ -15,8 +18,10 @@ import type {
   SessionCodeActivity,
   SessionEvent,
   SessionPhase,
+  SessionPreview,
   SessionSnapshot,
   SessionStatus,
+  SessionSummary,
 } from "../types/session.js";
 
 const DEFAULT_PHASES: Array<{ key: OrchestrationPhaseKey; label: string }> = [
@@ -42,14 +47,39 @@ type SessionRecord = {
 
 export class SessionStore {
   private readonly sessions = new Map<string, SessionRecord>();
+  private readonly persistenceDir: string;
 
-  createSession(userRequest: string, targetDirectory?: string): SessionSnapshot {
+  constructor(persistenceDir?: string) {
+    const homeDir = process.env["HOME"] ?? process.env["USERPROFILE"] ?? process.cwd();
+    this.persistenceDir = persistenceDir ?? path.join(homeDir, ".claw-sessions");
+  }
+
+  async listSessions(): Promise<SessionSummary[]> {
+    const fromDisk = await this.loadSummariesFromDisk();
+    const fromMemory: SessionSummary[] = [...this.sessions.values()].map((record) =>
+      this.toSummary(record.snapshot),
+    );
+
+    // Merge: memory takes precedence over disk for same id
+    const byId = new Map<string, SessionSummary>();
+    for (const summary of fromDisk) {
+      byId.set(summary.id, summary);
+    }
+    for (const summary of fromMemory) {
+      byId.set(summary.id, summary);
+    }
+
+    return [...byId.values()].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  }
+
+  createSession(userRequest: string, targetDirectory?: string, startMode: ProjectStartMode = "continue"): SessionSnapshot {
     const now = new Date().toISOString();
     const id = randomUUID();
     const snapshot: SessionSnapshot = {
       id,
       userRequest,
       ...(targetDirectory ? { targetDirectory } : {}),
+      startMode,
       status: "queued",
       createdAt: now,
       updatedAt: now,
@@ -107,6 +137,10 @@ export class SessionStore {
       status,
       ...(error !== undefined ? { error } : {}),
     });
+
+    if (status === "completed" || status === "failed") {
+      void this.persistSummary(record.snapshot);
+    }
   }
 
   appendMessage(id: string, message: ChatMessage): void {
@@ -180,6 +214,17 @@ export class SessionStore {
     this.emit(id, {
       type: "code_activity",
       codeActivity: this.cloneCodeActivity(record.snapshot.codeActivity),
+    });
+  }
+
+  setPreview(id: string, preview: SessionPreview): void {
+    const record = this.requireRecord(id);
+    record.snapshot.preview = { ...preview };
+    record.snapshot.updatedAt = new Date().toISOString();
+
+    this.emit(id, {
+      type: "preview",
+      preview: { ...preview },
     });
   }
 
@@ -260,6 +305,7 @@ export class SessionStore {
       artifacts: snapshot.artifacts.map((artifact) => ({ ...artifact })),
       ...(snapshot.clarification ? { clarification: this.cloneClarification(snapshot.clarification) } : {}),
       ...(snapshot.codeActivity ? { codeActivity: this.cloneCodeActivity(snapshot.codeActivity) } : {}),
+      ...(snapshot.preview ? { preview: this.clonePreview(snapshot.preview) } : {}),
     };
   }
 
@@ -277,5 +323,55 @@ export class SessionStore {
       files: codeActivity.files.map((item) => item),
       writtenFiles: codeActivity.writtenFiles.map((item) => item),
     };
+  }
+
+  private clonePreview(preview: SessionPreview): SessionPreview {
+    return {
+      ...preview,
+    };
+  }
+
+  private toSummary(snapshot: SessionSnapshot): SessionSummary {
+    return {
+      id: snapshot.id,
+      userRequest: snapshot.userRequest,
+      ...(snapshot.targetDirectory ? { targetDirectory: snapshot.targetDirectory } : {}),
+      startMode: snapshot.startMode,
+      status: snapshot.status,
+      createdAt: snapshot.createdAt,
+      updatedAt: snapshot.updatedAt,
+      ...(snapshot.error ? { error: snapshot.error } : {}),
+    };
+  }
+
+  private async persistSummary(snapshot: SessionSnapshot): Promise<void> {
+    try {
+      await mkdir(this.persistenceDir, { recursive: true });
+      const filePath = path.join(this.persistenceDir, `${snapshot.id}.json`);
+      await writeFile(filePath, JSON.stringify(this.toSummary(snapshot), null, 2), "utf8");
+    } catch {
+      // persistence failure is non-fatal
+    }
+  }
+
+  private async loadSummariesFromDisk(): Promise<SessionSummary[]> {
+    try {
+      const entries = await readdir(this.persistenceDir);
+      const summaries: SessionSummary[] = [];
+      for (const entry of entries) {
+        if (!entry.endsWith(".json")) {
+          continue;
+        }
+        try {
+          const raw = await readFile(path.join(this.persistenceDir, entry), "utf8");
+          summaries.push(JSON.parse(raw) as SessionSummary);
+        } catch {
+          // skip corrupted entry
+        }
+      }
+      return summaries;
+    } catch {
+      return [];
+    }
   }
 }

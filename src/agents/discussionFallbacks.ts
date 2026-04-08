@@ -194,7 +194,7 @@ export function buildDeterministicAIDiscussion(args: {
     ),
     feasibility: ensureMin(
       [
-        "Ollama qwen3 단일 모델로도 MVP 수준의 역할 분리는 가능합니다.",
+        "Ollama qwen3.5 단일 모델로도 MVP 수준의 역할 분리는 가능합니다.",
         "정확도 부족은 재시도와 deterministic fallback 으로 완화할 수 있습니다.",
       ],
       2,

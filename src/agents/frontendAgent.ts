@@ -1,6 +1,7 @@
 import { resolveGenerationProfile } from "../llm/modelProfiles.js";
 import { OllamaClient } from "../llm/ollamaClient.js";
 import { buildFrontendDiscussionPrompt, buildFrontendSpecPrompt } from "../prompts/frontend.js";
+import { buildConversationMessages } from "../prompts/shared.js";
 import type { ChatMessage } from "../types/chat.js";
 import {
   frontendDiscussionSchema,
@@ -23,6 +24,7 @@ export async function runFrontendDiscussion(args: {
   try {
     return await args.client.generateStructured({
       ...prompt,
+      conversationMessages: buildConversationMessages(args.messages),
       schema: frontendDiscussionSchema,
       ...profile,
     });

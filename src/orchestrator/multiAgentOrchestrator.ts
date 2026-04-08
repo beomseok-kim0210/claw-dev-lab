@@ -1,3 +1,4 @@
+import { mkdir, readFile } from "node:fs/promises";
 import { formatAIDiscussion, generateAIFeaturesSpec, runAIDiscussion } from "../agents/aiAgent.js";
 import { formatBackendDiscussion, generateBackendSpec, runBackendDiscussion } from "../agents/backendAgent.js";
 import {
@@ -6,6 +7,7 @@ import {
   planClarification,
 } from "../agents/clarificationAgent.js";
 import { generateBuildBrief } from "../agents/buildBriefAgent.js";
+import { isAllowedRolePath } from "../agents/codegenPaths.js";
 import { generateCodeBundle, reviseCodeBundle } from "../agents/codegenAgent.js";
 import {
   buildVerificationRepairReview,
@@ -44,6 +46,7 @@ import type {
   OrchestrationHooks,
   OrchestrationPhaseKey,
   OrchestrationResult,
+  ProjectStartMode,
   VerificationCheck,
 } from "../types/orchestration.js";
 import type { BuildBrief } from "../types/generation.js";
@@ -52,45 +55,69 @@ import { writeArtifacts, writeExecutionArtifacts } from "./outputWriter.js";
 import path from "node:path";
 import {
   formatProjectMemoryMessage,
+  formatRoleProjectMemoryMessage,
   listWorkspaceFiles,
   loadProjectMemory,
   loadWorkspaceContextFiles,
   persistProjectMemory,
+  type ProjectMemory,
 } from "./projectMemory.js";
 import { formatVerificationReport, runWorkspaceVerification } from "./workspaceVerifier.js";
 
 type MultiAgentOrchestratorArgs = {
+  /** 토론·추론·리뷰 담당 모델 (qwen3.5 등 reasoning 특화) */
   client: OllamaClient;
+  /** 코드 생성·수정 전용 모델 (qwen2.5-coder 등 코드 특화). 미설정 시 client와 동일 */
+  codegenClient?: OllamaClient;
   outputDir: string;
   codeOutputDir?: string;
   codePathPrefix?: string;
+  projectStartMode?: ProjectStartMode;
   hooks?: OrchestrationHooks;
 };
 
 type DiscussionRole = Exclude<AgentRole, "pm">;
 const MAX_CODE_REVIEW_ROUNDS = 2;
+const MAX_AUTONOMOUS_REPAIR_CYCLES = 3;
+
+type GeneratedSpecBundle = {
+  backend: OrchestrationResult["specs"]["backend"];
+  frontend: OrchestrationResult["specs"]["frontend"];
+  ai: OrchestrationResult["specs"]["ai"];
+  infra: OrchestrationResult["specs"]["infra"];
+  test: OrchestrationResult["specs"]["test"];
+};
 
 export class MultiAgentOrchestrator {
   private readonly client: OllamaClient;
+  private readonly codegenClient: OllamaClient;
   private readonly outputDir: string;
   private readonly codeOutputDir: string;
   private readonly codePathPrefix: string;
   private readonly projectRootDir: string;
+  private readonly projectStartMode: ProjectStartMode;
   private readonly hooks: OrchestrationHooks | undefined;
 
   constructor(args: MultiAgentOrchestratorArgs) {
     this.client = args.client;
+    this.codegenClient = args.codegenClient ?? args.client;
     this.outputDir = args.outputDir;
     this.codeOutputDir = args.codeOutputDir ?? args.outputDir;
     this.codePathPrefix = args.codePathPrefix ?? (args.codeOutputDir ? "" : "generated-app");
     this.projectRootDir = this.codePathPrefix ? path.resolve(this.codeOutputDir, this.codePathPrefix) : this.codeOutputDir;
+    this.projectStartMode = args.projectStartMode ?? "continue";
     this.hooks = args.hooks;
   }
 
   async run(userRequest: string): Promise<OrchestrationResult> {
     const chat = new ChatStateManager();
-    const projectMemory = await loadProjectMemory(this.projectRootDir);
-    let workspaceFiles = await listWorkspaceFiles(this.projectRootDir).catch(() => [] as string[]);
+    await mkdir(this.projectRootDir, { recursive: true });
+    const projectMemory =
+      this.projectStartMode === "continue" ? await loadProjectMemory(this.projectRootDir) : undefined;
+    let workspaceFiles =
+      this.projectStartMode === "continue"
+        ? await listWorkspaceFiles(this.projectRootDir).catch(() => [] as string[])
+        : [];
     const userMessage = chat.addUserRequest(userRequest);
     await this.emitMessage(userMessage);
     await this.emitPhase("user", "사용자 요청", "completed", "공유 채팅방에 새로운 요청이 등록되었습니다.");
@@ -118,11 +145,12 @@ export class MultiAgentOrchestrator {
     let test: TestDiscussion | undefined;
 
     for (const role of discussionOrder) {
+      const scopedMessages = this.buildRoleScopedMessages(chat, role, projectMemory);
       if (role === "backend") {
         backend = await runBackendDiscussion({
           client: this.client,
           userRequest,
-          messages: chat.getMessages(),
+          messages: scopedMessages,
         });
         await this.emitMessage(chat.addAgentMessage("backend", formatBackendDiscussion(backend)));
         continue;
@@ -132,7 +160,7 @@ export class MultiAgentOrchestrator {
         frontend = await runFrontendDiscussion({
           client: this.client,
           userRequest,
-          messages: chat.getMessages(),
+          messages: scopedMessages,
         });
         await this.emitMessage(chat.addAgentMessage("frontend", formatFrontendDiscussion(frontend)));
         continue;
@@ -142,7 +170,7 @@ export class MultiAgentOrchestrator {
         infra = await runInfraDiscussion({
           client: this.client,
           userRequest,
-          messages: chat.getMessages(),
+          messages: scopedMessages,
         });
         await this.emitMessage(chat.addAgentMessage("infra", formatInfraDiscussion(infra)));
         continue;
@@ -152,7 +180,7 @@ export class MultiAgentOrchestrator {
         test = await runTestDiscussion({
           client: this.client,
           userRequest,
-          messages: chat.getMessages(),
+          messages: scopedMessages,
         });
         await this.emitMessage(chat.addAgentMessage("test", formatTestDiscussion(test)));
         continue;
@@ -161,7 +189,7 @@ export class MultiAgentOrchestrator {
       ai = await runAIDiscussion({
         client: this.client,
         userRequest,
-        messages: chat.getMessages(),
+        messages: scopedMessages,
       });
       await this.emitMessage(chat.addAgentMessage("ai", formatAIDiscussion(ai)));
     }
@@ -174,11 +202,12 @@ export class MultiAgentOrchestrator {
     const reactions = [];
     for (const role of reactionOrder) {
       const targetMessage = this.pickReactionTarget(role, chat.getMessages());
+      const scopedMessages = this.buildRoleScopedMessages(chat, role, projectMemory);
       const reaction = await runAgentReaction({
         client: this.client,
         role,
         userRequest,
-        messages: chat.getMessages(),
+        messages: scopedMessages,
         targetMessage,
       });
       reactions.push(reaction);
@@ -207,36 +236,16 @@ export class MultiAgentOrchestrator {
     await this.emitPhase("pm-final", "PM 최종 결정", "completed", "PM이 최종 MVP 방향을 확정했습니다.");
 
     await this.emitPhase("execution", "명세 산출물", "active", "역할별 구현 명세를 생성하고 있습니다.");
-    const backendSpec = await generateBackendSpec({
-      client: this.client,
-      userRequest,
-      finalDecision: pmFinal,
-      backendDiscussion: backend,
-    });
-    const frontendSpec = await generateFrontendSpec({
-      client: this.client,
-      userRequest,
-      finalDecision: pmFinal,
-      frontendDiscussion: frontend,
-    });
-    const aiFeaturesSpec = await generateAIFeaturesSpec({
-      client: this.client,
-      userRequest,
-      finalDecision: pmFinal,
-      aiDiscussion: ai,
-    });
-    const infraSpec = await generateInfraSpec({
-      client: this.client,
-      userRequest,
-      finalDecision: pmFinal,
-      infraDiscussion: infra,
-    });
-    const testSpec = await generateTestSpec({
-      client: this.client,
-      userRequest,
-      finalDecision: pmFinal,
-      testDiscussion: test,
-    });
+    const { backend: backendSpec, frontend: frontendSpec, ai: aiFeaturesSpec, infra: infraSpec, test: testSpec } =
+      await this.generateSpecsInParallel({
+        userRequest,
+        finalDecision: pmFinal,
+        backend,
+        frontend,
+        ai,
+        infra,
+        test,
+      });
 
     const implementationPlan = await this.generateImplementationPlanAndEmitPhase(
       userRequest,
@@ -301,12 +310,13 @@ export class MultiAgentOrchestrator {
           .map((artifact) => stripCodePrefix(artifact.filename, this.codePathPrefix))
           .filter((filename) => filename.length > 0 && !filename.endsWith(".md")),
       ]);
-      const workspaceContextFiles = await loadWorkspaceContextFiles(this.projectRootDir, owner);
+      const workspaceContextFiles = await this.loadRoleWorkspaceContextFiles(owner, workspaceFiles);
+      const ownerMessages = this.buildRoleScopedMessages(chat, owner, projectMemory);
       const bundle = await generateCodeBundle({
-        client: this.client,
+        client: this.codegenClient,
         role: owner,
         userRequest,
-        messages: chat.getMessages(),
+        messages: ownerMessages,
         buildBrief,
         task,
         existingFiles,
@@ -327,7 +337,7 @@ export class MultiAgentOrchestrator {
         client: this.client,
         role: owner,
         userRequest,
-        messages: chat.getMessages(),
+        messages: ownerMessages,
         task,
         targetFiles,
         backendSpec,
@@ -374,6 +384,7 @@ export class MultiAgentOrchestrator {
         projectRoot: this.projectRootDir,
         generatedArtifacts: latestArtifacts,
         toolingRoot: process.cwd(),
+        mode: "partial",
       });
       await this.emitMessage(chat.addAgentMessage("test", formatVerificationReport(owner, latestVerificationChecks)));
       const reviewers = codingOrder.filter((role) => role !== owner);
@@ -396,13 +407,14 @@ export class MultiAgentOrchestrator {
           if (reviewer === "test" && autoTestRepairReview) {
             continue;
           }
+          const reviewerMessages = this.buildRoleScopedMessages(chat, reviewer, projectMemory);
           const review = await runImplementationReview({
             client: this.client,
             role: reviewer,
             userRequest,
-            messages: chat.getMessages(),
+            messages: reviewerMessages,
             targetMessage: latestTargetMessage,
-            targetFiles: latestTargetFiles,
+            targetFiles: latestArtifacts.map((artifact) => artifact.filename),
             generatedArtifacts: latestArtifacts,
             verificationChecks: latestVerificationChecks,
           });
@@ -433,10 +445,10 @@ export class MultiAgentOrchestrator {
         }
 
         const revisionBundle = await reviseCodeBundle({
-          client: this.client,
+          client: this.codegenClient,
           role: owner,
           userRequest,
-          messages: chat.getMessages(),
+          messages: this.buildRoleScopedMessages(chat, owner, projectMemory),
           buildBrief,
           task,
           existingFiles: uniqueCodePaths([
@@ -456,7 +468,7 @@ export class MultiAgentOrchestrator {
             findings: item.review.findings,
             adjustment: item.review.adjustment,
           })),
-          workspaceContextFiles: await loadWorkspaceContextFiles(this.projectRootDir, owner),
+          workspaceContextFiles: await this.loadRoleWorkspaceContextFiles(owner, workspaceFiles),
         });
         const revisedArtifacts = revisionBundle.files.map((file) => ({
           filename: withCodePrefix(file.path, this.codePathPrefix),
@@ -513,8 +525,57 @@ export class MultiAgentOrchestrator {
           projectRoot: this.projectRootDir,
           generatedArtifacts: latestArtifacts,
           toolingRoot: process.cwd(),
+          mode: "partial",
         });
         await this.emitMessage(chat.addAgentMessage("test", formatVerificationReport(owner, latestVerificationChecks)));
+      }
+
+      const failedVerificationChecks = latestVerificationChecks.filter((check) => check.status === "failed");
+      if (failedVerificationChecks.length > 0) {
+        unresolvedReviewFindings.push(
+          ...failedVerificationChecks.map((check) => `Blocking: ${check.name} failed. ${check.summary}`),
+        );
+        await this.emitMessage(
+          chat.addAgentMessage("pm", formatOwnerRepairDeferralMessage(owner, failedVerificationChecks)),
+        );
+      }
+    }
+
+    let finalVerificationChecks = await runWorkspaceVerification({
+      projectRoot: this.projectRootDir,
+      generatedArtifacts: codeArtifacts,
+      toolingRoot: process.cwd(),
+      mode: "full",
+    });
+    await this.emitMessage(chat.addAgentMessage("test", formatVerificationReport("final workspace", finalVerificationChecks)));
+    let finalFailedVerificationChecks = finalVerificationChecks.filter((check) => check.status === "failed");
+    if (finalFailedVerificationChecks.length > 0) {
+      unresolvedReviewFindings.push(
+        ...finalFailedVerificationChecks.map((check) => `Blocking: ${check.name} failed. ${check.summary}`),
+      );
+      const repairResult = await this.runAutonomousRepairLoop({
+        userRequest,
+        chat,
+        ...(projectMemory ? { projectMemory } : {}),
+        buildBrief,
+        implementationPlan,
+        codingOrder,
+        artifacts,
+        codeArtifacts,
+        workspaceFiles,
+        verificationChecks: finalVerificationChecks,
+      });
+      artifacts = repairResult.artifacts;
+      codeArtifacts = repairResult.codeArtifacts;
+      workspaceFiles = repairResult.workspaceFiles;
+      finalVerificationChecks = repairResult.verificationChecks;
+      finalFailedVerificationChecks = finalVerificationChecks.filter((check) => check.status === "failed");
+      unresolvedReviewFindings.push(...repairResult.unresolvedFindings);
+
+      if (finalFailedVerificationChecks.length > 0) {
+        await this.emitMessage(
+          chat.addAgentMessage("pm", formatVerificationGateWarning("Final workspace", finalFailedVerificationChecks)),
+        );
       }
     }
 
@@ -592,6 +653,63 @@ export class MultiAgentOrchestrator {
     };
   }
 
+  private buildRoleScopedMessages(
+    chat: ChatStateManager,
+    role: DiscussionRole,
+    projectMemory?: ProjectMemory,
+  ): ChatMessage[] {
+    const baseMessages = chat.getMessages();
+    if (!projectMemory) {
+      return baseMessages;
+    }
+
+    const roleMemory = formatRoleProjectMemoryMessage(role, projectMemory);
+    if (!roleMemory) {
+      return baseMessages;
+    }
+
+    return [
+      ...baseMessages,
+      {
+        id: `ctx-${role}-${baseMessages.length + 1}`,
+        speaker: "Project Memory",
+        role: "pm",
+        content: roleMemory,
+        turn: baseMessages.length,
+        timestamp: new Date().toISOString(),
+      },
+    ];
+  }
+
+  private async loadRoleWorkspaceContextFiles(
+    role: DiscussionRole,
+    trackedWorkspaceFiles: string[],
+    maxFiles = 6,
+  ): Promise<Array<{ path: string; content: string }>> {
+    if (this.projectStartMode === "continue") {
+      return loadWorkspaceContextFiles(this.projectRootDir, role, maxFiles);
+    }
+
+    const roleFiles = uniqueCodePaths(trackedWorkspaceFiles)
+      .filter((filePath) => isAllowedRolePath(role, filePath))
+      .slice(0, maxFiles);
+
+    const contexts: Array<{ path: string; content: string }> = [];
+    for (const filePath of roleFiles) {
+      try {
+        const content = await readFile(path.resolve(this.projectRootDir, filePath), "utf8");
+        contexts.push({
+          path: filePath,
+          content: content.split(/\r?\n/u).slice(0, 160).join("\n").slice(0, 8_000),
+        });
+      } catch {
+        continue;
+      }
+    }
+
+    return contexts;
+  }
+
   private async generateImplementationPlanAndEmitPhase(
     userRequest: string,
     finalDecision: OrchestrationResult["discussion"]["pmFinal"],
@@ -614,6 +732,277 @@ export class MultiAgentOrchestrator {
     });
   }
 
+  private async generateSpecsInParallel(args: {
+    userRequest: string;
+    finalDecision: OrchestrationResult["discussion"]["pmFinal"];
+    backend: BackendDiscussion;
+    frontend: FrontendDiscussion;
+    ai: AIDiscussion;
+    infra: InfraDiscussion;
+    test: TestDiscussion;
+  }): Promise<GeneratedSpecBundle> {
+    const [backendSpec, frontendSpec, aiFeaturesSpec, infraSpec, testSpec] = await Promise.all([
+      generateBackendSpec({
+        client: this.client,
+        userRequest: args.userRequest,
+        finalDecision: args.finalDecision,
+        backendDiscussion: args.backend,
+      }),
+      generateFrontendSpec({
+        client: this.client,
+        userRequest: args.userRequest,
+        finalDecision: args.finalDecision,
+        frontendDiscussion: args.frontend,
+      }),
+      generateAIFeaturesSpec({
+        client: this.client,
+        userRequest: args.userRequest,
+        finalDecision: args.finalDecision,
+        aiDiscussion: args.ai,
+      }),
+      generateInfraSpec({
+        client: this.client,
+        userRequest: args.userRequest,
+        finalDecision: args.finalDecision,
+        infraDiscussion: args.infra,
+      }),
+      generateTestSpec({
+        client: this.client,
+        userRequest: args.userRequest,
+        finalDecision: args.finalDecision,
+        testDiscussion: args.test,
+      }),
+    ]);
+
+    return {
+      backend: backendSpec,
+      frontend: frontendSpec,
+      ai: aiFeaturesSpec,
+      infra: infraSpec,
+      test: testSpec,
+    };
+  }
+
+  private async runAutonomousRepairLoop(args: {
+    userRequest: string;
+    chat: ChatStateManager;
+    projectMemory?: ProjectMemory;
+    buildBrief: BuildBrief;
+    implementationPlan: ImplementationPlan;
+    codingOrder: DiscussionRole[];
+    artifacts: GeneratedArtifact[];
+    codeArtifacts: GeneratedArtifact[];
+    workspaceFiles: string[];
+    verificationChecks: VerificationCheck[];
+  }): Promise<{
+    artifacts: GeneratedArtifact[];
+    codeArtifacts: GeneratedArtifact[];
+    workspaceFiles: string[];
+    verificationChecks: VerificationCheck[];
+    unresolvedFindings: string[];
+  }> {
+    let artifacts = args.artifacts;
+    let codeArtifacts = args.codeArtifacts;
+    let workspaceFiles = args.workspaceFiles;
+    let verificationChecks = args.verificationChecks;
+    const unresolvedFindings: string[] = [];
+
+    for (let cycle = 1; cycle <= MAX_AUTONOMOUS_REPAIR_CYCLES; cycle += 1) {
+      const failedChecks = verificationChecks.filter((check) => check.status === "failed");
+      if (failedChecks.length === 0) {
+        break;
+      }
+
+      const owners = this.inferRepairOwners(failedChecks, args.codingOrder);
+      await this.emitMessage(
+        args.chat.addAgentMessage("pm", formatAutonomousRepairCycleMessage(cycle, failedChecks, owners)),
+      );
+
+      let repairedAnyFile = false;
+      for (const owner of owners) {
+        const task = args.implementationPlan.tasks.find((candidate) => candidate.owner === owner);
+        if (!task) {
+          continue;
+        }
+
+        const workspaceContextFiles = await this.loadRoleWorkspaceContextFiles(owner, workspaceFiles, 12);
+        if (workspaceContextFiles.length === 0) {
+          continue;
+        }
+
+        const targetFiles = workspaceContextFiles.map((file) => withCodePrefix(file.path, this.codePathPrefix));
+        const targetMessage = args.chat.addAgentMessage(
+          "pm",
+          formatAutonomousRepairAssignmentMessage(owner, cycle, targetFiles, failedChecks),
+        );
+        await this.emitMessage(targetMessage);
+
+        const currentArtifacts = workspaceContextFiles.map((file) => ({
+          filename: withCodePrefix(file.path, this.codePathPrefix),
+          absolutePath: path.resolve(this.projectRootDir, file.path),
+          content: file.content,
+        }));
+
+        const reviews: Array<{ reviewer: DiscussionRole; review: ImplementationReview }> = [];
+        const autoRepairReview = buildVerificationRepairReview({
+          targetMessage,
+          targetFiles,
+          verificationChecks,
+          messages: args.chat.getMessages(),
+        });
+        if (autoRepairReview) {
+          reviews.push({ reviewer: "test", review: autoRepairReview });
+          await this.emitMessage(args.chat.addAgentMessage("test", formatImplementationReview(autoRepairReview)));
+        }
+
+        for (const reviewer of args.codingOrder.filter((role) => role !== owner)) {
+          if (reviewer === "test" && autoRepairReview) {
+            continue;
+          }
+          const review = await runImplementationReview({
+            client: this.client,
+            role: reviewer,
+            userRequest: args.userRequest,
+            messages: this.buildRoleScopedMessages(args.chat, reviewer, args.projectMemory),
+            targetMessage,
+            targetFiles,
+            generatedArtifacts: currentArtifacts,
+            verificationChecks,
+          });
+          reviews.push({ reviewer, review });
+          await this.emitMessage(args.chat.addAgentMessage(reviewer, formatImplementationReview(review)));
+        }
+
+        const revisedBundle = await reviseCodeBundle({
+          client: this.codegenClient,
+          role: owner,
+          userRequest: args.userRequest,
+          messages: this.buildRoleScopedMessages(args.chat, owner, args.projectMemory),
+          buildBrief: args.buildBrief,
+          task,
+          existingFiles: uniqueCodePaths([
+            ...workspaceFiles,
+            ...artifacts
+              .map((artifact) => stripCodePrefix(artifact.filename, this.codePathPrefix))
+              .filter((filename) => filename.length > 0 && !filename.endsWith(".md")),
+          ]),
+          currentFiles: workspaceContextFiles.map((file) => ({
+            path: file.path,
+            purpose: `Current ${owner} workspace file before autonomous repair.`,
+            content: file.content,
+          })),
+          reviews: reviews.map((item) => ({
+            reviewer: item.reviewer,
+            reactionType: item.review.reactionType,
+            approvedAreas: item.review.approvedAreas,
+            findings: item.review.findings,
+            adjustment: item.review.adjustment,
+          })),
+          workspaceContextFiles,
+        });
+
+        const revisedArtifacts = revisedBundle.files.map((file) => ({
+          filename: withCodePrefix(file.path, this.codePathPrefix),
+          absolutePath: "",
+          content: file.content,
+        }));
+        if (revisedArtifacts.length === 0) {
+          continue;
+        }
+
+        await this.emitMessage(
+          args.chat.addAgentMessage(owner, formatAutonomousRepairRevisionMessage(owner, cycle, reviews, revisedArtifacts)),
+        );
+
+        const writtenArtifacts = await writeArtifacts(
+          this.codeOutputDir,
+          revisedArtifacts.map((artifact) => ({
+            filename: artifact.filename,
+            content: artifact.content,
+          })),
+        );
+        repairedAnyFile = repairedAnyFile || writtenArtifacts.length > 0;
+        artifacts = mergeArtifacts(artifacts, writtenArtifacts);
+        codeArtifacts = mergeArtifacts(codeArtifacts, writtenArtifacts);
+        workspaceFiles = uniqueCodePaths([
+          ...workspaceFiles,
+          ...writtenArtifacts.map((artifact) => stripCodePrefix(artifact.filename, this.codePathPrefix)),
+        ]);
+
+        const ownerChecks = await runWorkspaceVerification({
+          projectRoot: this.projectRootDir,
+          generatedArtifacts: writtenArtifacts,
+          toolingRoot: process.cwd(),
+          mode: "partial",
+        });
+        await this.emitMessage(args.chat.addAgentMessage("test", formatVerificationReport(`${owner} repair`, ownerChecks)));
+      }
+
+      verificationChecks = await runWorkspaceVerification({
+        projectRoot: this.projectRootDir,
+        generatedArtifacts: codeArtifacts,
+        toolingRoot: process.cwd(),
+        mode: "full",
+      });
+      await this.emitMessage(
+        args.chat.addAgentMessage("test", formatVerificationReport(`autonomous repair cycle ${cycle}`, verificationChecks)),
+      );
+
+      const cycleFailures = verificationChecks.filter((check) => check.status === "failed");
+      if (cycleFailures.length === 0) {
+        await this.emitMessage(
+          args.chat.addAgentMessage("pm", formatAutonomousRepairSuccessMessage(cycle, owners)),
+        );
+        break;
+      }
+
+      unresolvedFindings.push(...cycleFailures.map((check) => `Blocking: ${check.name} failed. ${check.summary}`));
+      if (!repairedAnyFile) {
+        await this.emitMessage(
+          args.chat.addAgentMessage("pm", formatAutonomousRepairStallMessage(cycle, cycleFailures)),
+        );
+        break;
+      }
+    }
+
+    return {
+      artifacts,
+      codeArtifacts,
+      workspaceFiles,
+      verificationChecks,
+      unresolvedFindings: uniqueReviewLines(unresolvedFindings),
+    };
+  }
+
+  private inferRepairOwners(
+    failedChecks: VerificationCheck[],
+    codingOrder: DiscussionRole[],
+  ): DiscussionRole[] {
+    const owners = new Set<DiscussionRole>();
+
+    for (const check of failedChecks) {
+      const haystack = `${check.name}\n${check.summary}\n${check.outputSnippet ?? ""}`.toLowerCase();
+      if (/public\/|public\\|app\.js|index\.html|styles\.css|frontend/u.test(haystack)) {
+        owners.add("frontend");
+      }
+      if (/src\/lib|src\\lib|domain\.ts|\bai\b/u.test(haystack)) {
+        owners.add("ai");
+      }
+      if (/tests\/|tests\\|node --test|smoke\.test|contracts\.test|\btest\b/u.test(haystack)) {
+        owners.add("test");
+      }
+      if (/docker|\.env|ops\/|ops\\|compose|infra/u.test(haystack)) {
+        owners.add("infra");
+      }
+      if (/src\/server|src\\server|src\/shared|src\\shared|\/api\/|route|bootstrap|health|typescript check|server did not become ready|analyzeshape|maptoparallelogram|backend/u.test(haystack)) {
+        owners.add("backend");
+      }
+    }
+
+    const ordered = codingOrder.filter((role) => owners.has(role));
+    return ordered.length > 0 ? ordered : codingOrder;
+  }
+
   private buildDiscussionOrder(userRequest: string): DiscussionRole[] {
     const roles: DiscussionRole[] = ["backend", "frontend", "ai", "infra", "test"];
     const hash = Array.from(userRequest).reduce((acc, char) => acc + char.charCodeAt(0), 0);
@@ -632,10 +1021,23 @@ export class MultiAgentOrchestrator {
   private pickReactionTarget(role: DiscussionRole, messages: ChatMessage[]): ChatMessage {
     const reversed = [...messages].reverse();
     const target = reversed.find((message) => message.role !== "user" && message.role !== role);
-    if (!target) {
-      throw new Error(`반응할 대상 메시지를 찾지 못했습니다: ${role}`);
+    if (target) {
+      return target;
     }
-    return target;
+
+    const selfTarget = reversed.find((message) => message.role === role);
+    if (selfTarget) {
+      return selfTarget;
+    }
+
+    return messages.at(-1) ?? {
+      id: `synthetic-target-${role}`,
+      speaker: "PM",
+      role: "pm",
+      content: "No prior agent message was available, so react to the shared user request and current PM scope.",
+      turn: 0,
+      timestamp: new Date().toISOString(),
+    };
   }
 
   private async emitMessage(message: ChatMessage): Promise<void> {
@@ -788,6 +1190,90 @@ function formatPmInterventionMessage(
   ].join("\n");
 }
 
+function formatOwnerRepairDeferralMessage(
+  owner: DiscussionRole,
+  failedChecks: VerificationCheck[],
+): string {
+  return [
+    `Title: PM defers ${englishRoleLabel(owner)} bundle failure`,
+    "Message Type: autonomous repair",
+    `Summary: ${englishRoleLabel(owner)} still has failed partial verification checks, but the system will continue and try to repair them in the final workspace loop.`,
+    "Open Checks:",
+    ...failedChecks.map((check) => `- ${check.name}: ${check.summary}`),
+  ].join("\n");
+}
+
+function formatAutonomousRepairCycleMessage(
+  cycle: number,
+  failedChecks: VerificationCheck[],
+  owners: DiscussionRole[],
+): string {
+  return [
+    `Title: PM autonomous repair cycle ${cycle}`,
+    "Message Type: autonomous repair",
+    "Summary: Verification failed, so the agents are entering another analysis and repair round instead of stopping.",
+    `Repair Owners: ${owners.map((owner) => englishRoleLabel(owner)).join(", ")}`,
+    "Blocking Checks:",
+    ...failedChecks.map((check) => `- ${check.name}: ${check.summary}`),
+  ].join("\n");
+}
+
+function formatAutonomousRepairAssignmentMessage(
+  owner: DiscussionRole,
+  cycle: number,
+  targetFiles: string[],
+  failedChecks: VerificationCheck[],
+): string {
+  return [
+    `Title: PM repair assignment for ${englishRoleLabel(owner)} cycle ${cycle}`,
+    "Message Type: repair assignment",
+    `Summary: ${englishRoleLabel(owner)} must revise its owned files against the failed verification output.`,
+    "Target Files:",
+    ...targetFiles.map((file) => `- ${file}`),
+    "Blocking Checks:",
+    ...failedChecks.map((check) => `- ${check.name}: ${check.summary}`),
+  ].join("\n");
+}
+
+function formatAutonomousRepairRevisionMessage(
+  owner: DiscussionRole,
+  cycle: number,
+  reviews: Array<{ reviewer: DiscussionRole; review: ImplementationReview }>,
+  revisedArtifacts: GeneratedArtifact[],
+): string {
+  const findings = uniqueReviewLines(reviews.flatMap((item) => item.review.findings)).slice(0, 6);
+  return [
+    `Title: ${englishRoleLabel(owner)} autonomous repair cycle ${cycle}`,
+    "Message Type: revision",
+    `Round Summary: ${englishRoleLabel(owner)} is rewriting files specifically against failed verification and review findings.`,
+    "Issues Being Addressed:",
+    ...findings.map((item) => `- ${item}`),
+    "Rewritten Files:",
+    ...revisedArtifacts.map((artifact) => `- ${artifact.filename}`),
+  ].join("\n");
+}
+
+function formatAutonomousRepairSuccessMessage(cycle: number, owners: DiscussionRole[]): string {
+  return [
+    `Title: PM autonomous repair cycle ${cycle} cleared`,
+    "Message Type: autonomous repair",
+    `Summary: ${owners.map((owner) => englishRoleLabel(owner)).join(", ")} resolved the remaining verification blockers.`,
+  ].join("\n");
+}
+
+function formatAutonomousRepairStallMessage(
+  cycle: number,
+  failedChecks: VerificationCheck[],
+): string {
+  return [
+    `Title: PM autonomous repair cycle ${cycle} stalled`,
+    "Message Type: autonomous repair",
+    "Summary: Another repair round did not change the failing checks, so the session will stop with the current diagnostics.",
+    "Remaining Checks:",
+    ...failedChecks.map((check) => `- ${check.name}: ${check.summary}`),
+  ].join("\n");
+}
+
 function uniqueReviewLines(items: string[]): string[] {
   return items.filter((item, index) => item.trim().length > 0 && items.indexOf(item) === index);
 }
@@ -822,4 +1308,17 @@ function englishRoleLabel(role: DiscussionRole): string {
     return "Test";
   }
   return "AI";
+}
+
+function formatVerificationGateWarning(owner: string, failedChecks: VerificationCheck[]): string {
+  return [
+    `Title: ${owner} verification gate warning`,
+    "Message Type: verification warning",
+    `Summary: ${owner} did not fully pass the verification gate. The session will continue with partial results.`,
+    "Remaining Issues:",
+    ...failedChecks.map((check) => `- ${check.name}: ${check.summary}`),
+    "Note:",
+    "- 의존성(npm install)이 설치되지 않은 생성 프로젝트에서는 일부 검증이 불가합니다.",
+    "- 생성된 코드를 실제 사용하려면 npm install 후 다시 검증하세요.",
+  ].join("\n");
 }

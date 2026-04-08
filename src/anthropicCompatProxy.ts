@@ -201,7 +201,7 @@ function resolveModel(provider: CompatProvider): string {
     case "groq":
       return process.env.GROQ_MODEL?.trim() || "openai/gpt-oss-20b";
     case "ollama":
-      return process.env.OLLAMA_MODEL?.trim() || "qwen3";
+      return process.env.OLLAMA_MODEL?.trim() || "qwen3.5";
     case "copilot":
       return process.env.COPILOT_MODEL?.trim() || "openai/gpt-4.1-mini";
     case "zai":
@@ -313,9 +313,9 @@ function providerModelCatalog(provider: CompatProvider): string[] {
       return uniqueStrings([ACTIVE_MODEL, ...customCatalog, "glm-5", "glm-4.5", "glm-4.5-air"]);
     case "ollama":
       return uniqueStrings([
-        process.env.OLLAMA_MODEL?.trim() || "qwen3",
+        process.env.OLLAMA_MODEL?.trim() || "qwen3.5",
         ...customCatalog,
-        "qwen3",
+        "qwen3.5",
         "qwen2.5-coder:7b",
         "qwen2.5-coder:14b",
         "deepseek-r1:8b",

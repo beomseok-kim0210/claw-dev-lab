@@ -7,18 +7,22 @@ const state = {
   eventSource: null,
   activeArtifact: null,
   projectMemory: null,
+  projectStartMode: "continue",
+  projectStartModeManual: false,
 };
 
 const requestInput = document.getElementById("requestInput");
 const targetDirectoryInput = document.getElementById("targetDirectoryInput");
 const submitButton = document.getElementById("submitButton");
 const exampleButton = document.getElementById("exampleButton");
+const newProjectButton = document.getElementById("newProjectButton");
 const sessionIdValue = document.getElementById("sessionIdValue");
 const sessionStatusValue = document.getElementById("sessionStatusValue");
 const targetDirectoryValue = document.getElementById("targetDirectoryValue");
 const projectMemoryMode = document.getElementById("projectMemoryMode");
 const projectMemorySummary = document.getElementById("projectMemorySummary");
 const projectMemoryPreview = document.getElementById("projectMemoryPreview");
+const targetDirectoryHint = document.getElementById("targetDirectoryHint");
 const healthChip = document.getElementById("healthChip");
 const modelChip = document.getElementById("modelChip");
 const phaseList = document.getElementById("phaseList");
@@ -31,14 +35,25 @@ const clarificationSummary = document.getElementById("clarificationSummary");
 const clarificationForm = document.getElementById("clarificationForm");
 const chatStream = document.getElementById("chatStream");
 const decisionText = document.getElementById("decisionText");
+const previewStatusText = document.getElementById("previewStatusText");
+const previewLink = document.getElementById("previewLink");
 const artifactToolbar = document.getElementById("artifactToolbar");
 const artifactPreview = document.getElementById("artifactPreview");
 const messageTemplate = document.getElementById("messageTemplate");
 
 let projectMemoryLookupTimer = null;
+let latestProjectMemoryRequestId = 0;
 
 exampleButton.addEventListener("click", () => {
   requestInput.value = EXAMPLE_REQUEST;
+});
+
+newProjectButton.addEventListener("click", () => {
+  state.projectStartMode = "new";
+  state.projectStartModeManual = true;
+  targetDirectoryInput.value = buildNewProjectDirectory();
+  updateSubmitLabel();
+  void inspectProjectMemory();
 });
 
 targetDirectoryInput.addEventListener("input", () => {
@@ -70,6 +85,7 @@ submitButton.addEventListener("click", async () => {
       body: JSON.stringify({
         request,
         targetDirectory: targetDirectoryInput.value.trim() || undefined,
+        startMode: state.projectStartMode,
       }),
     });
 
@@ -103,7 +119,10 @@ async function loadHealth() {
     const payload = await response.json();
     healthChip.textContent = payload.ok ? "Ollama 연결됨" : "Ollama 연결 실패";
     healthChip.classList.toggle("healthy", Boolean(payload.ok));
-    modelChip.textContent = payload.model ?? "qwen3";
+    modelChip.textContent =
+      payload.codegenModel && payload.codegenModel !== payload.model
+        ? `${payload.model} / codegen ${payload.codegenModel}`
+        : payload.model ?? "qwen3.5";
     if (!targetDirectoryInput.value && payload.defaultTargetDirectory) {
       targetDirectoryInput.value = payload.defaultTargetDirectory;
     }
@@ -115,6 +134,7 @@ async function loadHealth() {
 
 async function inspectProjectMemory() {
   const targetDirectory = targetDirectoryInput.value.trim();
+  const requestId = ++latestProjectMemoryRequestId;
   try {
     const params = new URLSearchParams();
     if (targetDirectory) {
@@ -124,9 +144,18 @@ async function inspectProjectMemory() {
     if (!response.ok) {
       throw new Error("프로젝트 상태를 불러오지 못했습니다.");
     }
+    if (requestId !== latestProjectMemoryRequestId) {
+      return;
+    }
     state.projectMemory = await response.json();
+    if (targetDirectory !== targetDirectoryInput.value.trim()) {
+      return;
+    }
     renderProjectMemory(state.projectMemory);
   } catch (error) {
+    if (requestId !== latestProjectMemoryRequestId) {
+      return;
+    }
     projectMemoryMode.textContent = "프로젝트 상태 확인 실패";
     projectMemorySummary.textContent = error instanceof Error ? error.message : String(error);
     projectMemoryPreview.innerHTML = "";
@@ -186,6 +215,12 @@ function openSessionStream(sessionId) {
     applySnapshot(state.snapshot);
   });
 
+  eventSource.addEventListener("preview", (event) => {
+    const payload = JSON.parse(event.data);
+    state.snapshot.preview = payload.preview;
+    applySnapshot(state.snapshot);
+  });
+
   eventSource.addEventListener("status", (event) => {
     const payload = JSON.parse(event.data);
     state.snapshot.status = payload.status;
@@ -224,11 +259,16 @@ function applySnapshot(snapshot) {
   renderClarification(snapshot.clarification, snapshot.status);
   renderTranscript(snapshot.transcript);
   renderDecision(snapshot.transcript, snapshot.error);
+  renderPreview(snapshot.preview, snapshot.targetDirectory);
   renderArtifacts(snapshot.artifacts);
 }
 
 function renderProjectMemory(preview) {
-  const isContinue = preview?.mode === "continue";
+  const suggestedStartMode = preview?.mode === "continue" ? "continue" : "new";
+  if (!state.projectStartModeManual) {
+    state.projectStartMode = suggestedStartMode;
+  }
+  const isContinue = state.projectStartMode === "continue";
   projectMemoryMode.textContent = isContinue ? "기존 프로젝트를 이어서 개발합니다." : "새 프로젝트로 시작합니다.";
 
   if (!preview) {
@@ -239,6 +279,9 @@ function renderProjectMemory(preview) {
   }
 
   const summaryParts = [];
+  if (state.projectStartModeManual && state.projectStartMode === "new" && suggestedStartMode === "continue") {
+    summaryParts.push("기존 기록이 있어도 새 프로젝트 시작으로 고정했습니다.");
+  }
   if (preview.hasProjectMemory && preview.appName) {
     summaryParts.push(`${preview.appName} 메모리가 저장되어 있습니다.`);
   } else if (preview.exists && preview.workspaceFileCount > 0) {
@@ -252,6 +295,13 @@ function renderProjectMemory(preview) {
   }
 
   projectMemorySummary.textContent = summaryParts.join(" ");
+  targetDirectoryHint.textContent = isContinue
+    ? "이 폴더에는 기존 파일이 있어 이어서 개발합니다. 새로 시작하려면 `새 프로젝트 폴더` 버튼을 누르세요."
+    : "이 폴더는 새 프로젝트로 사용됩니다. 필요하면 다른 경로로 바꿀 수 있습니다.";
+  if (!isContinue && suggestedStartMode === "continue") {
+    targetDirectoryHint.textContent = "기존 파일이 보여도 이번 실행은 새 프로젝트로 고정되어 이전 토론 기록을 이어받지 않습니다.";
+  }
+
   const lines = [];
   if (preview.workspacePreview?.length) {
     lines.push(`<p class="memory-preview-heading">기존 파일</p>`);
@@ -647,6 +697,29 @@ function renderDecision(transcript, error) {
     : finalPm.content;
 }
 
+function renderPreview(preview, targetDirectory) {
+  if (!preview) {
+    previewStatusText.textContent = targetDirectory
+      ? "코드 생성이 끝나면 이 세션의 앱 미리보기 링크가 여기에 표시됩니다."
+      : "코드 타깃 폴더를 사용하면 생성 앱을 웹으로 바로 열 수 있습니다.";
+    previewLink.classList.add("hidden");
+    previewLink.removeAttribute("href");
+    return;
+  }
+
+  previewStatusText.textContent = preview.detail || "앱 미리보기 상태를 불러오는 중입니다.";
+
+  if (preview.status === "ready" && preview.url) {
+    previewLink.href = preview.url;
+    previewLink.textContent = "미리보기 열기";
+    previewLink.classList.remove("hidden");
+    return;
+  }
+
+  previewLink.classList.add("hidden");
+  previewLink.removeAttribute("href");
+}
+
 function renderArtifacts(artifacts) {
   artifactToolbar.innerHTML = "";
 
@@ -792,6 +865,7 @@ function resetSessionView() {
   renderCodeActivity(undefined);
   renderClarification(undefined, "queued");
   renderTranscript([]);
+  renderPreview(undefined, targetDirectoryInput.value.trim() || undefined);
   renderArtifacts([]);
   decisionText.textContent = "토론이 끝나면 PM 최종 결정이 여기에 표시됩니다.";
   updateSubmitLabel();
@@ -804,7 +878,58 @@ function updateSubmitLabel() {
 }
 
 function currentSubmitLabel() {
-  return state.projectMemory?.mode === "continue" ? "이어서 개발 시작" : "세션 시작";
+  return state.projectStartMode === "continue" ? "이어서 개발 시작" : "새 프로젝트 시작";
+}
+
+function buildNewProjectDirectory() {
+  const currentTarget = targetDirectoryInput.value.trim();
+  const baseTarget = currentTarget || state.projectMemory?.targetDirectory || "C:\\Users\\SSAFY\\Desktop\\multi-agent-workspace";
+  const requestSlug = slugifyRequest(requestInput.value.trim());
+  const timestamp = compactTimestamp(new Date());
+
+  let parentPath = "C:\\Users\\SSAFY\\Desktop";
+  let baseName = "multi-agent-workspace";
+
+  if (baseTarget.includes("\\") || baseTarget.includes("/")) {
+    const normalized = baseTarget.replaceAll("/", "\\");
+    const parts = normalized.split("\\").filter(Boolean);
+    if (parts.length > 0) {
+      baseName = parts.at(-1) || baseName;
+      if (parts.length > 1) {
+        parentPath = normalized.slice(0, normalized.length - baseName.length - 1);
+      }
+    }
+  }
+
+  const nextBaseName = requestSlug ? `${baseName}-${requestSlug}` : `${baseName}-new`;
+  return `${parentPath}\\${nextBaseName}-${timestamp}`;
+}
+
+function slugifyRequest(value) {
+  if (!value) {
+    return "";
+  }
+
+  const englishOnly = value
+    .toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, " ")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 4)
+    .join("-");
+
+  return englishOnly.slice(0, 32);
+}
+
+function compactTimestamp(date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  const hours = String(date.getHours()).padStart(2, "0");
+  const minutes = String(date.getMinutes()).padStart(2, "0");
+  const seconds = String(date.getSeconds()).padStart(2, "0");
+  return `${year}${month}${day}-${hours}${minutes}${seconds}`;
 }
 
 function defaultPhases() {

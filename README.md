@@ -47,7 +47,7 @@
 모든 구조화 LLM 호출 파라미터는 이제 [src/llm/modelProfiles.ts](./src/llm/modelProfiles.ts)에서 관리합니다.
 
 - 지원 모델 계열
-  - `qwen3`
+  - `qwen3.5`
   - `qwen-coder`
   - `deepseek`
   - `llama`
@@ -64,7 +64,7 @@
   - `code-review`
   - `codegen`
 
-현재 `qwen3` 기준 대표값:
+현재 `qwen3.5` 기준 대표값:
 
 - `discussion`: `temperature 0.12`, `numPredict 640`, `maxRetries 5`
 - `spec`: `temperature 0.10`, `numPredict 920`, `maxRetries 5`
@@ -298,7 +298,7 @@ npm install
 ### 2. Ollama 준비
 
 ```powershell
-ollama pull qwen3
+ollama pull qwen3.5
 ollama serve
 ```
 
@@ -401,7 +401,7 @@ public/
 
 아직 완전히 해결되지 않은 점도 있습니다.
 
-- 긴 end-to-end 실행은 `qwen3` 응답 시간에 영향을 받음
+- 긴 end-to-end 실행은 `qwen3.5` 응답 시간에 영향을 받음
 - 일부 보조 로직은 아직 heuristic fallback을 함께 사용
 - 프로젝트 메모리는 현재 파일 기반이며, 팀 단위 장기 지식 저장소는 아님
 - 생성 코드 품질은 요청 복잡도와 모델 성능에 따라 편차가 있음
@@ -412,4 +412,3 @@ public/
 - 실패 테스트 기반 자동 수정 라운드 강화
 - 더 큰 모델 또는 단계별 모델 혼합 운영
 - 장기 프로젝트 메모리 구조 고도화
-

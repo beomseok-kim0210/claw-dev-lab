@@ -2,7 +2,7 @@ import type { ZodType } from "zod";
 
 type OllamaRole = "system" | "user" | "assistant";
 
-type OllamaChatMessage = {
+export type OllamaChatMessage = {
   role: OllamaRole;
   content: string;
 };
@@ -25,6 +25,7 @@ export type StructuredGenerationOptions = {
   systemPrompt: string;
   userPrompt: string;
   schema: ZodType<unknown>;
+  conversationMessages?: OllamaChatMessage[];
   temperature?: number;
   numPredict?: number;
   maxRetries?: number;
@@ -52,6 +53,7 @@ export class OllamaClient {
     systemPrompt: string;
     userPrompt: string;
     schema: ZodType<T>;
+    conversationMessages?: OllamaChatMessage[];
     temperature?: number;
     numPredict?: number;
     maxRetries?: number;
@@ -67,6 +69,7 @@ export class OllamaClient {
       const raw = await this.chat(
         [
           { role: "system", content: args.systemPrompt },
+          ...(args.conversationMessages ?? []),
           { role: "user", content: retryPrompt },
         ],
         compactChatOptions({

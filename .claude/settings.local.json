@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__392f2eef-e3ae-4d91-8ce2-481eb7a5a6ef__notion-update-page",
+      "mcp__392f2eef-e3ae-4d91-8ce2-481eb7a5a6ef__notion-create-pages",
+      "Bash(node --test)",
+      "Bash(ls -la /c/Users/SSAFY/Desktop/claw-dev/src/agents/*.ts)",
+      "Bash(ls -la /c/Users/SSAFY/Desktop/claw-dev/src/prompts/*.ts)",
+      "Bash(ls -la /c/Users/SSAFY/Desktop/claw-dev/src/types/*.ts)",
+      "Bash(find /c/Users/SSAFY/Desktop/claw-dev/src -name \"*.ts\" -exec grep -l \"^export\" {} \\\\;)"
+    ]
+  }
+}

@@ -270,8 +270,8 @@ async function configureCompatProvider(provider, env, rl, modelArg) {
         provider,
         modelArg,
         envKey: "OLLAMA_MODEL",
-        defaultModel: "qwen3",
-        suggestions: ["qwen3", "qwen2.5-coder:7b", "qwen2.5-coder:14b", "deepseek-r1:8b"],
+        defaultModel: "qwen3.5",
+        suggestions: ["qwen3.5", "qwen2.5-coder:7b", "qwen2.5-coder:14b", "deepseek-r1:8b"],
       });
       env.OLLAMA_KEEP_ALIVE = env.OLLAMA_KEEP_ALIVE?.trim() || "30m";
       process.stdout.write(`\nLaunching Ollama mode against ${env.OLLAMA_BASE_URL} with model ${env.OLLAMA_MODEL}.\n`);

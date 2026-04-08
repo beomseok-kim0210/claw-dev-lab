@@ -23,6 +23,11 @@ type HarnessPromptArgs = {
   contract: HarnessContract;
 };
 
+export type PromptConversationMessage = {
+  role: "user" | "assistant";
+  content: string;
+};
+
 const ROLE_LABELS: Record<AgentRole, string> = {
   pm: "PM agent",
   backend: "Backend agent",
@@ -75,7 +80,7 @@ export function buildHarnessPrompt(args: HarnessPromptArgs): {
 
   const sections: string[] = [];
   if (args.messages) {
-    sections.push(renderDiscussionContext(args.userRequest, args.messages));
+    sections.push(renderDiscussionContextSummary(args.userRequest, args.messages));
   } else {
     sections.push(`User request: ${args.userRequest}`);
   }
@@ -122,6 +127,25 @@ export function renderDiscussionContext(userRequest: string, messages: ChatMessa
   ].join("\n\n");
 }
 
+export function buildConversationMessages(messages: ChatMessage[]): PromptConversationMessage[] {
+  return messages.map((message) => ({
+    role: message.role === "user" ? "user" : "assistant",
+    content: [
+      `[${message.id}] turn=${message.turn} speaker=${message.speaker} role=${message.role}`,
+      message.content,
+    ].join("\n"),
+  }));
+}
+
 function renderContextBlock(block: HarnessContextBlock): string {
   return [block.title, ...block.lines].join("\n");
+}
+
+function renderDiscussionContextSummary(userRequest: string, messages: ChatMessage[]): string {
+  return [
+    `User request: ${userRequest}`,
+    `Available message IDs: ${renderMessageIds(messages)}`,
+    "Previous team conversation is provided as structured chat history. Read those messages before responding.",
+    "When you cite references, use only the IDs that exist in that chat history.",
+  ].join("\n\n");
 }
