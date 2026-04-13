@@ -1,5 +1,15 @@
 import { z } from "zod";
 
+export const sharedContractEntrySchema = z
+  .object({
+    kind: z.enum(["api-endpoint", "shared-function", "event"]),
+    signature: z.string().min(1),
+    owner: z.string().min(1),
+    consumers: z.array(z.string().min(1)).min(1),
+    payload: z.string().min(1),
+  })
+  .strict();
+
 export const buildBriefSchema = z
   .object({
     appName: z.string().min(1),
@@ -11,6 +21,7 @@ export const buildBriefSchema = z
     screens: z.array(z.string().min(1)).min(2).max(8),
     entities: z.array(z.string().min(1)).min(2).max(8),
     apiEndpoints: z.array(z.string().min(1)).max(10),
+    sharedContracts: z.array(sharedContractEntrySchema).min(1).max(12),
     stack: z.array(z.string().min(1)).min(2).max(6),
     fileLayout: z.array(z.string().min(1)).min(6).max(16),
     acceptanceChecks: z.array(z.string().min(1)).min(3).max(6),
@@ -51,6 +62,7 @@ export const generatedCodeBundleSchema = z
   })
   .strict();
 
+export type SharedContractEntry = z.infer<typeof sharedContractEntrySchema>;
 export type BuildBrief = z.infer<typeof buildBriefSchema>;
 export type GeneratedCodeFile = z.infer<typeof generatedCodeFileSchema>;
 export type GeneratedCodePlanFile = z.infer<typeof generatedCodePlanFileSchema>;

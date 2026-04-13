@@ -1,5 +1,5 @@
 import { resolveGenerationProfile } from "../llm/modelProfiles.js";
-import { OllamaClient } from "../llm/ollamaClient.js";
+import type { LLMClient } from "../llm/llmClient.js";
 import { buildImplementationReviewPrompt } from "../prompts/coding.js";
 import { buildConversationMessages } from "../prompts/shared.js";
 import type { AgentRole, ChatMessage } from "../types/chat.js";
@@ -58,7 +58,7 @@ export async function runImplementationUpdate(args: {
 }
 
 export async function runImplementationReview(args: {
-  client?: OllamaClient;
+  client?: LLMClient;
   role: CodingRole;
   userRequest: string;
   messages: ChatMessage[];

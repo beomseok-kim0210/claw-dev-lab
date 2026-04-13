@@ -128,13 +128,28 @@ export function renderDiscussionContext(userRequest: string, messages: ChatMessa
 }
 
 export function buildConversationMessages(messages: ChatMessage[]): PromptConversationMessage[] {
-  return messages.map((message) => ({
-    role: message.role === "user" ? "user" : "assistant",
-    content: [
-      `[${message.id}] turn=${message.turn} speaker=${message.speaker} role=${message.role}`,
-      message.content,
-    ].join("\n"),
-  }));
+  if (messages.length === 0) {
+    return [];
+  }
+
+  // 모든 이전 대화를 하나의 user 메시지로 합쳐서 전달한다.
+  // 이렇게 해야 LLM이 이전 에이전트 발언을 "내가 한 말"로 착각하지 않고
+  // "팀 대화 기록"으로 올바르게 인식한다.
+  const transcript = messages
+    .map((message) =>
+      [
+        `[${message.id}] turn=${message.turn} speaker=${message.speaker} role=${message.role}`,
+        message.content,
+      ].join("\n"),
+    )
+    .join("\n\n---\n\n");
+
+  return [
+    {
+      role: "user",
+      content: `Below is the team conversation so far. Read it carefully, then produce your response.\n\n${transcript}`,
+    },
+  ];
 }
 
 function renderContextBlock(block: HarnessContextBlock): string {

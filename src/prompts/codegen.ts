@@ -1,6 +1,6 @@
 import type { AgentRole, ChatMessage } from "../types/chat.js";
 import type { ImplementationPlan } from "../types/contracts.js";
-import type { BuildBrief, GeneratedCodeFile } from "../types/generation.js";
+import type { BuildBrief, GeneratedCodeFile, SharedContractEntry } from "../types/generation.js";
 import { buildHarnessPrompt } from "./shared.js";
 
 type CodingRole = Exclude<AgentRole, "pm">;
@@ -46,6 +46,10 @@ export function buildCodeBundlePrompt(args: {
         ],
       },
       {
+        title: "Shared Contracts (cross-role interface agreements — MUST be respected)",
+        lines: renderSharedContracts(args.buildBrief.sharedContracts, args.role),
+      },
+      {
         title: "Known Workspace Files",
         lines: args.existingFiles.length > 0 ? args.existingFiles.map((item) => `- ${item}`) : ["- none"],
       },
@@ -80,6 +84,9 @@ export function buildCodeBundlePrompt(args: {
         "Do not use TODO, placeholder, or omitted sections.",
         "Keep the Node.js runtime dependency-free. Browser-side CDN scripts or HTTPS dynamic imports are allowed only when the request explicitly needs them.",
         "If you write TypeScript imports, use explicit .js extensions for relative imports.",
+        "Plan files in dependency order: shared contracts first, then server, then HTML, then JS/CSS. This ensures later files can reference earlier ones.",
+        "Browser JS files must NEVER use process.env or Node.js APIs. API keys belong in server-side code only.",
+        "Frontend files must call backend API endpoints (e.g. /api/weather) instead of calling external APIs directly.",
       ],
     },
   });
@@ -136,6 +143,10 @@ export function buildCodeFilePrompt(args: {
         lines: [`- path: ${args.targetFile.path}`, `- purpose: ${args.targetFile.purpose}`],
       },
       {
+        title: "Shared Contracts (cross-role interface agreements — MUST be respected)",
+        lines: renderSharedContracts(args.buildBrief.sharedContracts, args.role),
+      },
+      {
         title: "Known Workspace Files",
         lines: args.existingFiles.length > 0 ? args.existingFiles.map((item) => `- ${item}`) : ["- none"],
       },
@@ -161,6 +172,11 @@ export function buildCodeFilePrompt(args: {
         "If this file depends on exported types or contracts from another file, match those fields exactly or update the owning contract file in the same task.",
         "Do not use TODO, placeholder, or omitted sections.",
         "If you write TypeScript imports, use explicit .js extensions for relative imports.",
+        "CRITICAL: If 'Relevant Existing File Contents' includes an HTML file, your JS must only reference element IDs and classes that actually exist in that HTML.",
+        "CRITICAL: If 'Relevant Existing File Contents' includes a JS or server file, your HTML must include all DOM elements that the JS references via getElementById, querySelector, etc.",
+        "Browser JS must NEVER use process.env, require(), or Node.js APIs. Use fetch('/api/...') to get data from the backend instead.",
+        "API keys and secrets must ONLY be used in server-side code, never in browser-facing files.",
+        "Frontend files (public/) must call backend API endpoints (e.g. fetch('/api/weather')) instead of calling external APIs directly.",
       ],
     },
   });
@@ -224,6 +240,10 @@ export function buildCodeRevisionPrompt(args: {
       {
         title: "Current Owner Files",
         lines: renderCurrentFiles(args.currentFiles),
+      },
+      {
+        title: "Shared Contracts (cross-role interface agreements — MUST be respected)",
+        lines: renderSharedContracts(args.buildBrief.sharedContracts, args.role),
       },
       {
         title: "Known Workspace Files",
@@ -325,6 +345,10 @@ export function buildCodeFileRevisionPrompt(args: {
         lines: renderReviewContext(args.reviews),
       },
       {
+        title: "Shared Contracts (cross-role interface agreements — MUST be respected)",
+        lines: renderSharedContracts(args.buildBrief.sharedContracts, args.role),
+      },
+      {
         title: "Known Workspace Files",
         lines: args.existingFiles.length > 0 ? args.existingFiles.map((item) => `- ${item}`) : ["- none"],
       },
@@ -350,6 +374,9 @@ export function buildCodeFileRevisionPrompt(args: {
         "If this file depends on exported types or contracts from another file, keep the field names aligned with those contracts or revise the contract owner file in the same task.",
         "Do not use TODO, placeholder, or omitted sections.",
         "If you write TypeScript imports, use explicit .js extensions for relative imports.",
+        "CRITICAL: HTML element IDs/classes must match what the JS code references. JS must only query elements that exist in the HTML.",
+        "Browser JS must NEVER use process.env, require(), or Node.js APIs.",
+        "Frontend files must call backend API endpoints instead of calling external APIs directly.",
       ],
     },
   });
@@ -382,10 +409,44 @@ function roleResponsibilities(role: CodingRole): string[] {
 
   if (role === "frontend") {
     return [
-      "Produce a responsive UI that makes the request-specific product interaction visible immediately.",
+      "Produce a distinctive, production-grade UI that feels genuinely designed for the product context — never generic or template-like.",
       "Keep the browser code dependency-free and directly compatible with the bootstrap payload.",
-      "Prioritize mobile usability when the request hints at mobile or app usage.",
+      "Prioritize mobile-first responsive design: use CSS Grid or Flexbox for layout, rem/em units, and media queries.",
       "Do not stop at showing lists or markdown-style summaries when the request expects an actual product surface.",
+
+      // Design thinking — decide a bold aesthetic direction BEFORE coding
+      "Before writing any CSS, commit to a clear aesthetic direction (e.g., brutally minimal, retro-futuristic, luxury/refined, editorial/magazine, playful/toy-like, art deco, industrial/utilitarian). Execute it with precision and consistency.",
+      "Every design must have one UNFORGETTABLE visual detail — something a user will remember after closing the tab.",
+
+      // Typography — the single biggest differentiator
+      "NEVER use generic fonts (Inter, Roboto, Arial, system-ui, Segoe UI, or system sans-serif stacks). Import distinctive Google Fonts or CDN-hosted fonts. Pair a characterful display font with a refined body font.",
+      "Vary font choices per project — never converge on the same font (e.g., Space Grotesk) across generations.",
+
+      // Color & Theme
+      "Commit to a cohesive, intentional color palette using CSS custom properties. Dominant colors with sharp accents outperform timid, evenly-distributed palettes.",
+      "NEVER default to purple gradients on white backgrounds or other cliché AI-generated color schemes. Choose colors that match the product context.",
+      "Vary between light and dark themes across projects — do not always default to the same.",
+
+      // Motion & Micro-interactions
+      "Add CSS animations for high-impact moments: staggered page-load reveals (animation-delay), scroll-triggered effects, and hover states that surprise.",
+      "Focus animation budget on one well-orchestrated entrance sequence rather than scattered micro-interactions.",
+      "Use CSS @keyframes and transitions (0.2s-0.6s, cubic-bezier easing) for smooth, intentional motion.",
+
+      // Spatial composition & Layout
+      "Use unexpected layouts: asymmetry, overlap, diagonal flow, grid-breaking hero elements, generous negative space OR controlled density. Avoid predictable card grids.",
+
+      // Backgrounds & Visual texture
+      "Create atmosphere with layered backgrounds: gradient meshes, noise/grain textures, geometric patterns, layered transparencies, dramatic shadows, or decorative borders. Never default to flat solid colors.",
+
+      // Spacing & System
+      "Apply consistent spacing via CSS custom properties (--spacing-sm, --spacing-md, --spacing-lg) for padding and margins.",
+      "Use border-radius, box-shadow with intentional values to reinforce the chosen aesthetic.",
+
+      // UX quality
+      "Show loading states (skeleton screens or spinners) while data is being fetched.",
+      "Show user-friendly error messages with retry options when API calls fail.",
+      "Ensure all interactive elements have visible hover/active/focus states.",
+      "The first screen must immediately show the core product experience, not a blank page waiting for data.",
     ];
   }
 
@@ -410,6 +471,24 @@ function roleResponsibilities(role: CodingRole): string[] {
     "Keep the logic deterministic and easy for the server or UI to consume.",
     "Avoid vague recommendation text that does not connect back to the request.",
   ];
+}
+
+function renderSharedContracts(contracts: BuildBrief["sharedContracts"], role: CodingRole): string[] {
+  if (!contracts || contracts.length === 0) {
+    return ["- none"];
+  }
+  // Show all contracts but highlight ones where this role is owner or consumer
+  return contracts.flatMap((c) => {
+    const isOwner = c.owner === role;
+    const isConsumer = c.consumers.includes(role);
+    const marker = isOwner ? " [YOU OWN THIS]" : isConsumer ? " [YOU CONSUME THIS]" : "";
+    return [
+      `- ${c.kind}: ${c.signature}${marker}`,
+      `  owner: ${c.owner}`,
+      `  consumers: ${c.consumers.join(", ")}`,
+      `  payload: ${c.payload}`,
+    ];
+  });
 }
 
 function renderWorkspaceContext(files: Array<{ path: string; content: string }>): string[] {

@@ -5,6 +5,8 @@ import { stdin as input, stdout as output } from "node:process";
 import pc from "picocolors";
 
 import { DEFAULT_EXAMPLE_REQUEST, loadAppConfig, resolveDefaultTargetDirectory } from "./config.js";
+import { GeminiClient } from "./llm/geminiClient.js";
+import { FallbackLLMClient } from "./llm/llmClient.js";
 import { OllamaClient } from "./llm/ollamaClient.js";
 import { printExecutionReport } from "./orchestrator/consoleReporter.js";
 import { MultiAgentOrchestrator } from "./orchestrator/multiAgentOrchestrator.js";
@@ -282,11 +284,24 @@ async function main(): Promise<void> {
     ...(parsed.model !== undefined ? { ollamaModel: parsed.model } : {}),
   });
 
-  const client = new OllamaClient({
+  const ollamaClient = new OllamaClient({
     baseUrl: config.ollamaBaseUrl,
     model: config.ollamaModel,
     timeoutMs: config.timeoutMs,
   });
+
+  const client = config.geminiApiKey
+    ? new FallbackLLMClient(
+        new GeminiClient({
+          apiKey: config.geminiApiKey,
+          model: config.geminiModel,
+          timeoutMs: config.timeoutMs,
+        }),
+        ollamaClient,
+        (reason) => process.stdout.write(`${pc.yellow("[LLM fallback]")} ${reason}\n`),
+      )
+    : ollamaClient;
+
   const codegenClient =
     config.ollamaCodegenModel !== config.ollamaModel
       ? new OllamaClient({

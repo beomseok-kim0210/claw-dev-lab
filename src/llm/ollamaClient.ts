@@ -1,4 +1,5 @@
 import type { ZodType } from "zod";
+import type { LLMClient } from "./llmClient.js";
 
 type OllamaRole = "system" | "user" | "assistant";
 
@@ -34,7 +35,7 @@ export type StructuredGenerationOptions = {
   repeatPenalty?: number;
 };
 
-export class OllamaClient {
+export class OllamaClient implements LLMClient {
   private readonly baseUrl: string;
   private readonly model: string;
   private readonly timeoutMs: number;
@@ -120,7 +121,6 @@ export class OllamaClient {
       body: JSON.stringify({
         model: this.model,
         stream: false,
-        think: false,
         messages,
         ...(options?.format ? { format: options.format } : {}),
         options: {

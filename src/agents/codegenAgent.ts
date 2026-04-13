@@ -4,7 +4,7 @@ import path from "node:path";
 import { tmpdir } from "node:os";
 
 import { resolveGenerationProfile } from "../llm/modelProfiles.js";
-import { OllamaClient } from "../llm/ollamaClient.js";
+import type { LLMClient } from "../llm/llmClient.js";
 import {
   buildCodeBundlePrompt,
   buildCodeFilePrompt,
@@ -29,7 +29,7 @@ import { buildFallbackCodeBundle } from "./codeScaffolder.js";
 const PLACEHOLDER_PATTERN = /\b(?:todo|placeholder|fill me|omit(?:ted)?|lorem ipsum)\b/i;
 
 export async function generateCodeBundle(args: {
-  client: OllamaClient;
+  client: LLMClient;
   role: CodingRole;
   userRequest: string;
   messages: ChatMessage[];
@@ -59,7 +59,7 @@ export async function generateCodeBundle(args: {
 }
 
 export async function reviseCodeBundle(args: {
-  client: OllamaClient;
+  client: LLMClient;
   role: CodingRole;
   userRequest: string;
   messages: ChatMessage[];
@@ -100,7 +100,7 @@ export async function reviseCodeBundle(args: {
 
 async function generateBundlePlan(
   args: {
-    client: OllamaClient;
+    client: LLMClient;
     role: CodingRole;
     userRequest: string;
     messages: ChatMessage[];
@@ -133,7 +133,7 @@ async function generateBundlePlan(
 
 async function generatePlannedFiles(
   args: {
-    client: OllamaClient;
+    client: LLMClient;
     role: CodingRole;
     userRequest: string;
     messages: ChatMessage[];
@@ -148,9 +148,26 @@ async function generatePlannedFiles(
   const generatedFiles: GeneratedCodeFile[] = [];
 
   for (const targetFile of files) {
+    // 이전에 생성된 파일들을 컨텍스트로 함께 전달한다.
+    // 이렇게 해야 app.js가 index.html의 DOM 요소를 참조하거나,
+    // 프론트엔드가 백엔드 API 경로를 정확히 맞출 수 있다.
+    const previouslyGenerated = generatedFiles.map((file) => ({
+      path: file.path,
+      content: file.content,
+    }));
+    const combinedWorkspaceContext = [
+      ...(args.workspaceContextFiles ?? []),
+      ...previouslyGenerated,
+    ];
+
     const prompt = buildCodeFilePrompt({
       ...args,
       targetFile,
+      workspaceContextFiles: combinedWorkspaceContext,
+      existingFiles: [
+        ...args.existingFiles,
+        ...generatedFiles.map((file) => file.path),
+      ],
     });
 
     try {
@@ -180,7 +197,7 @@ async function generatePlannedFiles(
 
 async function reviseFilesIndividually(
   args: {
-    client: OllamaClient;
+    client: LLMClient;
     role: CodingRole;
     userRequest: string;
     messages: ChatMessage[];

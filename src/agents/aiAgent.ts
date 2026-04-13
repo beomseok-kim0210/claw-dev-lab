@@ -1,5 +1,5 @@
 import { resolveGenerationProfile } from "../llm/modelProfiles.js";
-import { OllamaClient } from "../llm/ollamaClient.js";
+import type { LLMClient } from "../llm/llmClient.js";
 import { buildAIDiscussionPrompt, buildAIFeaturesSpecPrompt } from "../prompts/ai.js";
 import { buildConversationMessages } from "../prompts/shared.js";
 import type { ChatMessage } from "../types/chat.js";
@@ -14,7 +14,7 @@ import { buildDeterministicAIDiscussion } from "./discussionFallbacks.js";
 import { buildDeterministicAIFeaturesSpec } from "./specFallbacks.js";
 
 export async function runAIDiscussion(args: {
-  client: OllamaClient;
+  client: LLMClient;
   userRequest: string;
   messages: ChatMessage[];
 }): Promise<AIDiscussion> {
@@ -34,7 +34,7 @@ export async function runAIDiscussion(args: {
 }
 
 export async function generateAIFeaturesSpec(args: {
-  client: OllamaClient;
+  client: LLMClient;
   userRequest: string;
   finalDecision: PMFinalDecision;
   aiDiscussion: AIDiscussion;

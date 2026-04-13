@@ -1,5 +1,5 @@
 import { resolveGenerationProfile } from "../llm/modelProfiles.js";
-import { OllamaClient } from "../llm/ollamaClient.js";
+import type { LLMClient } from "../llm/llmClient.js";
 import { buildClarificationPrompt } from "../prompts/clarification.js";
 import { buildConversationMessages } from "../prompts/shared.js";
 import type { ChatMessage } from "../types/chat.js";
@@ -30,7 +30,7 @@ const SERVICE_PATTERNS: Array<{ key: string; pattern: RegExp }> = [
 ];
 
 export async function planClarification(args: {
-  client: OllamaClient;
+  client: LLMClient;
   userRequest: string;
   messages: ChatMessage[];
 }): Promise<ClarificationPlan> {

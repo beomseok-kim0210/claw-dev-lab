@@ -1,5 +1,5 @@
 import { resolveGenerationProfile } from "../llm/modelProfiles.js";
-import { OllamaClient } from "../llm/ollamaClient.js";
+import type { LLMClient } from "../llm/llmClient.js";
 import { buildConversationMessages } from "../prompts/shared.js";
 import { buildPmFinalPrompt, buildPmInitialPrompt } from "../prompts/pm.js";
 import type { ChatMessage } from "../types/chat.js";
@@ -12,7 +12,7 @@ import {
 import { buildDeterministicPmFinalDecision, buildDeterministicPmInitialDiscussion } from "./discussionFallbacks.js";
 
 export async function runPmInitialDiscussion(args: {
-  client: OllamaClient;
+  client: LLMClient;
   userRequest: string;
   messages: ChatMessage[];
 }): Promise<PMInitialDiscussion> {
@@ -32,7 +32,7 @@ export async function runPmInitialDiscussion(args: {
 }
 
 export async function runPmFinalDecision(args: {
-  client: OllamaClient;
+  client: LLMClient;
   userRequest: string;
   messages: ChatMessage[];
 }): Promise<PMFinalDecision> {

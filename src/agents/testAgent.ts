@@ -1,5 +1,5 @@
 import { resolveGenerationProfile } from "../llm/modelProfiles.js";
-import { OllamaClient } from "../llm/ollamaClient.js";
+import type { LLMClient } from "../llm/llmClient.js";
 import { buildTestDiscussionPrompt, buildTestSpecPrompt } from "../prompts/test.js";
 import { buildConversationMessages } from "../prompts/shared.js";
 import type { ChatMessage } from "../types/chat.js";
@@ -14,7 +14,7 @@ import { buildDeterministicTestDiscussion } from "./discussionFallbacks.js";
 import { buildDeterministicTestSpec } from "./specFallbacks.js";
 
 export async function runTestDiscussion(args: {
-  client: OllamaClient;
+  client: LLMClient;
   userRequest: string;
   messages: ChatMessage[];
 }): Promise<TestDiscussion> {
@@ -34,7 +34,7 @@ export async function runTestDiscussion(args: {
 }
 
 export async function generateTestSpec(args: {
-  client: OllamaClient;
+  client: LLMClient;
   userRequest: string;
   finalDecision: PMFinalDecision;
   testDiscussion: TestDiscussion;

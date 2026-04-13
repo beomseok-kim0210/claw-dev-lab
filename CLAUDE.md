@@ -95,7 +95,7 @@ Do not implement first and explain later.
 - **에이전트**: `src/agents/`에 역할당 1파일, 함수 단위 분리 (클래스 아님)
 - **프롬프트**: `src/prompts/`에서 관리, `buildHarnessPrompt()`를 통해 생성
 - **LLM 응답 검증**: 모든 구조화 출력은 Zod 스키마로 파싱 + 재시도 루프
-- **모듈 시스템**: ESM (`"type": "module"`), 모든 상대 import는 `.js` 확장�� 필수
+- **모듈 시스템**: ESM (`"type": "module"`), 모든 상대 import는 `.js` 확장자 필수
 - **메모리**: 프로젝트 메모리는 `<targetDir>/.multi-agent/project-memory.json`에 파일 기반 저장
 
 ### 6 Agent Roles
@@ -188,7 +188,7 @@ No dedicated test runner is configured (workspace verifier handles generated cod
 | `src/orchestrator/multiAgentOrchestrator.ts` | 전체 파이프라인 제어 (가장 큰 파일) |
 | `src/orchestrator/workspaceVerifier.ts` | 생성 코드 검증 (node --check, tsc, node --test) |
 | `src/orchestrator/projectMemory.ts` | 프로젝트 메모리 로드/저장 |
-| `src/agents/codegenAgent.ts` | 역할별 코��� 번들 생성 |
+| `src/agents/codegenAgent.ts` | 역할별 코드 번들 생성 |
 | `src/agents/codeScaffolder.ts` | 코드 스캐폴딩 fallback |
 | `src/agents/codingAgent.ts` | 구현 업데이트, LLM 코드 리뷰 |
 | `src/harness/promptHarness.ts` | 공통 프롬프트 빌더 |

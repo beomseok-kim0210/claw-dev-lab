@@ -1,5 +1,5 @@
 import { resolveGenerationProfile } from "../llm/modelProfiles.js";
-import { OllamaClient } from "../llm/ollamaClient.js";
+import type { LLMClient } from "../llm/llmClient.js";
 import { buildImplementationPlanPrompt } from "../prompts/implementation.js";
 import {
   implementationPlanSchema,
@@ -13,7 +13,7 @@ import {
 } from "../types/contracts.js";
 
 type ImplementationPlannerArgs = {
-  client: OllamaClient;
+  client: LLMClient;
   userRequest: string;
   finalDecision: PMFinalDecision;
   backendSpec: BackendSpec;

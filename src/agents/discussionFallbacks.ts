@@ -16,22 +16,23 @@ export function buildDeterministicPmInitialDiscussion(args: {
   userRequest: string;
   messages: ChatMessage[];
 }): PMInitialDiscussion {
+  const req = shrink(args.userRequest);
   return {
     headline: "PM 초기 문제 정의",
-    problemStatement: `사용자 요청을 실행 가능한 협업 범위로 줄여야 합니다. 핵심 요청은 "${shrink(args.userRequest)}" 입니다.`,
+    problemStatement: `사용자 요청을 실행 가능한 협업 범위로 줄여야 합니다. 핵심 요청은 "${req}" 입니다.`,
     mvpGoals: ensureMin(
       [
-        "멀티 에이전트가 같은 채팅방에서 역할별로 의견을 남긴다.",
-        "PM이 최종 범위를 정리하고 이후 명세와 구현으로 연결한다.",
-        "모호한 정보는 질문으로 다시 확인한다.",
+        `"${req}" 의 핵심 기능을 최소 단위로 동작하게 만든다.`,
+        "사용자 요청에서 가장 중요한 기능 1개를 우선 구현한다.",
+        "MVP 범위를 넘어서는 기능은 별도로 분리한다.",
       ],
       2,
     ),
     successCriteria: ensureMin(
       [
-        "역할별 발언과 참조 메시지 ID가 남는다.",
-        "최종 산출물에 명세와 코드 파일이 함께 생성된다.",
-        "질문이 필요할 때 세션이 멈추고 사용자 답변 후 재개된다.",
+        "핵심 기능이 정상 동작하는 것을 확인할 수 있다.",
+        "사용자가 결과물을 바로 실행해 볼 수 있다.",
+        "코드가 실행 가능한 상태로 생성된다.",
       ],
       2,
     ),
@@ -43,34 +44,34 @@ export function buildDeterministicPmFinalDecision(args: {
   userRequest: string;
   messages: ChatMessage[];
 }): PMFinalDecision {
+  const req = shrink(args.userRequest);
   return {
     headline: "PM 최종 결정",
-    summary: `요청 "${shrink(args.userRequest)}" 에 대해 대화형 토론, 사용자 확인, 명세 생성, 코드 생성이 한 세션에서 이어지는 MVP로 확정합니다.`,
+    summary: `요청 "${req}" 에 대해 MVP 범위를 확정하고, 역할별 명세와 코드 생성으로 이어갑니다.`,
     mvpScope: ensureMin(
       [
-        "PM, 백엔드, 프론트엔드, AI, 인프라가 같은 채팅방에서 대화한다.",
-        "필요 시 사용자 확인 질문을 띄우고 답변을 반영한다.",
-        "최종적으로 명세 문서와 generated-app 코드 파일을 만든다.",
+        `"${req}" 의 핵심 기능을 구현한다.`,
+        "기본 UI와 백엔드 API를 연결한다.",
+        "실행 가능한 코드를 생성한다.",
       ],
       3,
     ),
     nonGoals: ensureMin(
       [
-        "실제 외부 SaaS 연동이나 다중 저장소 배포까지는 포함하지 않는다.",
-        "사람 개발자 없이 완전 자율 릴리스까지는 다루지 않는다.",
+        "프로덕션 배포 및 CI/CD 파이프라인은 포함하지 않는다.",
+        "사용자 인증 및 결제 시스템은 MVP 범위 밖이다.",
       ],
       2,
     ),
     deliveryPlan: ensureMin(
       [
-        "역할별 자유 토론과 반응 메시지를 먼저 정리한다.",
-        "질문이 필요한 항목을 사용자에게 확인한다.",
-        "명세와 구현 계획을 만든 뒤 생성 코드까지 이어간다.",
+        "역할별 토론을 바탕으로 기술 방향을 정리한다.",
+        "명세를 확정한 뒤 코드 생성으로 이어간다.",
+        "생성된 코드를 검증하고 수정한다.",
       ],
       3,
     ),
-    finalDecision:
-      "이 MVP는 토론형 기획, 사용자 확인, 역할별 명세, 코드 생성, 인프라 초안까지 한 세션에서 수행하는 협업 워크스페이스로 진행합니다.",
+    finalDecision: `"${req}" 요청에 대해 핵심 기능 중심의 MVP를 구현합니다. 백엔드 API, 프론트엔드 UI, 필요 시 AI 기능을 포함하며 실행 가능한 코드를 산출합니다.`,
     references: takeReferences(args.messages, 3),
   };
 }
@@ -79,40 +80,40 @@ export function buildDeterministicBackendDiscussion(args: {
   userRequest: string;
   messages: ChatMessage[];
 }): BackendDiscussion {
+  const req = shrink(args.userRequest);
   return {
     headline: "백엔드 관점 제안",
-    summary: "세션 상태와 산출물을 같은 API 흐름으로 묶어야 전체 협업이 안정적으로 이어집니다.",
-    claim: "세션 생성, 상태 조회, 질문 응답, 산출물 다운로드 API를 먼저 고정해야 합니다.",
+    summary: `"${req}" 를 위한 서버 구조와 데이터 흐름을 정리해야 합니다.`,
+    claim: "핵심 기능에 필요한 API 엔드포인트와 데이터 모델을 먼저 정의해야 합니다.",
     support: ensureMin(
       [
-        "토론과 구현은 같은 세션 ID를 기준으로 이어져야 합니다.",
-        "질문 응답이 들어오면 중단된 오케스트레이션을 같은 상태에서 재개해야 합니다.",
-        "산출물과 채팅 로그는 동일한 조회 모델을 따라야 합니다.",
+        "사용자 요청의 핵심 동작을 지원하는 API가 명확해야 프론트엔드와 연결됩니다.",
+        "데이터 모델이 먼저 정해져야 프론트엔드와 AI 기능이 안정적으로 연결됩니다.",
+        "에러 처리와 기본 검증 로직이 포함되어야 합니다.",
       ],
       2,
     ),
     rebuttalTarget: pickRebuttalTarget(args.messages, "backend"),
-    rebuttal: "프론트나 AI 요구사항도 결국 세션 API와 데이터 계약 위에서 안정적으로 연결되어야 합니다.",
+    rebuttal: "프론트엔드와 AI 기능도 결국 백엔드 API 위에서 동작하므로 데이터 계약이 먼저 필요합니다.",
     apiDesign: ensureMin(
       [
-        "POST /api/sessions 로 새 협업 세션을 생성합니다.",
-        "GET /api/sessions/:id 로 전체 스냅샷을 조회합니다.",
-        "POST /api/sessions/:id/clarifications 로 질문 답변을 제출합니다.",
+        `사용자 요청 "${req}" 의 핵심 데이터를 조회하는 GET 엔드포인트`,
+        `핵심 데이터를 생성/수정하는 POST/PUT 엔드포인트`,
+        `상태 확인을 위한 헬스 체크 엔드포인트`,
       ],
       3,
     ),
     dataModel: ensureMin(
       [
-        "SessionSnapshot 은 상태, 단계, transcript, artifacts 를 포함합니다.",
-        "Clarification 은 질문 목록, 답변 목록, pending/answered 상태를 가집니다.",
-        "Artifact 는 파일명, 다운로드 URL, 본문을 가집니다.",
+        "핵심 도메인 엔티티와 필드를 정의합니다.",
+        "API 요청/응답 스키마를 명확히 합니다.",
       ],
       2,
     ),
     constraints: ensureMin(
       [
-        "Ollama 응답이 불안정해도 세션이 실패하지 않도록 fallback 이 필요합니다.",
-        "긴 실행 중에도 UI가 진행 상황을 잃지 않도록 SSE 스트림이 유지되어야 합니다.",
+        "외부 API 호출 실패 시 기본값으로 fallback 합니다.",
+        "입력 검증과 에러 응답 형식을 통일합니다.",
       ],
       2,
     ),
@@ -124,41 +125,42 @@ export function buildDeterministicFrontendDiscussion(args: {
   userRequest: string;
   messages: ChatMessage[];
 }): FrontendDiscussion {
+  const req = shrink(args.userRequest);
   return {
     headline: "프론트엔드 관점 제안",
-    summary: "사용자는 토론, 질문, 산출물, 생성 코드를 한 화면에서 연속적으로 봐야 합니다.",
-    claim: "채팅방 UI 안에서 주장, 반박, 질문 카드, 산출물 탭이 자연스럽게 이어져야 합니다.",
+    summary: `"${req}" 를 위한 사용자 화면과 상호작용 흐름을 정리해야 합니다.`,
+    claim: "사용자가 핵심 기능을 직관적으로 사용할 수 있는 화면 구성이 우선입니다.",
     support: ensureMin(
       [
-        "기획과 구현이 분리된 화면보다 같은 세션 화면이 사용자 이해에 유리합니다.",
-        "질문이 생기면 같은 세션에서 바로 답변해야 흐름이 끊기지 않습니다.",
-        "생성 코드도 산출물 탭에서 바로 확인해야 합니다.",
+        "핵심 기능이 첫 화면에서 바로 접근 가능해야 합니다.",
+        "데이터 로딩 상태와 에러 상태를 명확히 보여줘야 합니다.",
+        "모바일과 데스크톱 모두에서 기본 사용이 가능해야 합니다.",
       ],
       2,
     ),
     rebuttalTarget: pickRebuttalTarget(args.messages, "frontend"),
-    rebuttal: "API가 아무리 잘 정리돼도 사용자가 흐름을 이해하지 못하면 협업 경험이 무너집니다.",
+    rebuttal: "백엔드 API가 완벽해도 사용자가 화면에서 기능을 찾지 못하면 의미가 없습니다.",
     screens: ensureMin(
       [
-        "요청 입력과 세션 상태를 보여주는 시작 패널",
-        "역할별 메시지를 실시간으로 보여주는 공유 채팅방",
-        "명세와 코드 파일을 탭으로 보여주는 산출물 패널",
+        `"${req}" 의 핵심 기능을 보여주는 메인 화면`,
+        "설정 및 환경 조정 화면",
+        "데이터 상세 보기 화면",
       ],
       3,
     ),
     components: ensureMin(
       [
-        "RequestComposer",
-        "PhaseTimeline",
-        "ClarificationCard",
-        "TranscriptStream",
+        "메인 콘텐츠 표시 컴포넌트",
+        "데이터 로딩/에러 상태 컴포넌트",
+        "사용자 입력 컴포넌트",
+        "네비게이션 컴포넌트",
       ],
       3,
     ),
     usabilityNotes: ensureMin(
       [
-        "현재 단계와 실패 이유가 항상 노출되어야 합니다.",
-        "질문 답변 입력은 한 번에 처리할 수 있어야 합니다.",
+        "로딩 중에는 스켈레톤 UI를 보여줍니다.",
+        "에러 발생 시 사용자에게 명확한 안내 메시지를 표시합니다.",
       ],
       2,
     ),
@@ -170,39 +172,40 @@ export function buildDeterministicAIDiscussion(args: {
   userRequest: string;
   messages: ChatMessage[];
 }): AIDiscussion {
+  const req = shrink(args.userRequest);
   return {
     headline: "AI 관점 제안",
-    summary: "단일 모델이라도 역할 프롬프트와 fallback 으로 충분히 멀티 에이전트 협업을 흉내낼 수 있습니다.",
-    claim: "역할 프롬프트, 구조화 출력, 실패 시 deterministic fallback 이 함께 있어야 AI 단계가 안정적입니다.",
+    summary: `"${req}" 에 AI 또는 지능형 기능이 필요한 부분을 정리합니다.`,
+    claim: "사용자 요청에서 자동화하거나 지능적으로 처리할 수 있는 부분을 식별해야 합니다.",
     support: ensureMin(
       [
-        "하나의 LLM 으로도 역할 기반 응답은 충분히 분리할 수 있습니다.",
-        "질문 루프가 없으면 모호한 요구사항을 잘못 가정할 위험이 큽니다.",
-        "코드 생성 단계에서도 리뷰 메시지를 남겨야 협업 느낌이 유지됩니다.",
+        "단순 CRUD를 넘어서는 지능형 처리가 필요한 부분이 있는지 확인해야 합니다.",
+        "외부 API나 데이터 분석이 필요한 경우 적절한 기술을 선택해야 합니다.",
+        "AI 기능이 없더라도 데이터 가공 및 추천 로직은 고려할 수 있습니다.",
       ],
       2,
     ),
     rebuttalTarget: pickRebuttalTarget(args.messages, "ai"),
-    rebuttal: "모든 것을 문서화만 하고 끝내면 사용자 목표인 공동 기획과 구현까지 이어지는 흐름을 만족할 수 없습니다.",
+    rebuttal: "기능만 구현하고 데이터 활용 전략이 없으면 앱의 차별화가 어렵습니다.",
     aiFeatures: ensureMin(
       [
-        "역할 기반 구조화 응답 생성",
-        "추가 확인 질문 계획 수립",
-        "명세와 구현 리뷰 메시지 생성",
+        `"${req}" 에서 자동화할 수 있는 데이터 처리 기능`,
+        "사용자 맞춤형 추천 또는 필터링 기능",
+        "외부 데이터 연동 및 가공 기능",
       ],
       3,
     ),
     feasibility: ensureMin(
       [
-        "Ollama qwen3.5 단일 모델로도 MVP 수준의 역할 분리는 가능합니다.",
-        "정확도 부족은 재시도와 deterministic fallback 으로 완화할 수 있습니다.",
+        "외부 API를 활용하면 MVP 수준에서 충분히 구현 가능합니다.",
+        "복잡한 ML 모델 없이 규칙 기반으로 먼저 구현할 수 있습니다.",
       ],
       2,
     ),
     risks: ensureMin(
       [
-        "JSON 형식이 깨질 수 있으므로 단계별 fallback 이 필요합니다.",
-        "질문 루프가 과도하면 사용자 흐름이 느려질 수 있어 최대 개수를 제한해야 합니다.",
+        "외부 API 의존도가 높으면 서비스 안정성에 영향을 줄 수 있습니다.",
+        "데이터 품질이 낮으면 결과 신뢰성이 떨어질 수 있습니다.",
       ],
       2,
     ),
@@ -214,25 +217,26 @@ export function buildDeterministicInfraDiscussion(args: {
   userRequest: string;
   messages: ChatMessage[];
 }): InfraDiscussion {
+  const req = shrink(args.userRequest);
   return {
     headline: "인프라 관점 제안",
-    summary: "MVP라도 실행 환경, 포트, 환경 변수, 로컬 배포 방식이 정리돼야 구현 결과를 바로 확인할 수 있습니다.",
-    claim: "로컬 Docker 와 단일 Node 서버 기준의 인프라 초안을 함께 제공해야 실제 검증이 쉬워집니다.",
+    summary: `"${req}" 를 실행할 수 있는 환경과 배포 구조를 정리합니다.`,
+    claim: "MVP라도 실행 환경이 정리돼야 구현 결과를 바로 확인할 수 있습니다.",
     support: ensureMin(
       [
-        "생성 코드만 있고 실행 방법이 없으면 사용자 입장에서 결과 확인이 어렵습니다.",
-        "개발 환경과 실행 환경 차이를 줄이면 구현 검증이 빨라집니다.",
-        "질문 루프에서 인프라 선택지를 미리 확인하면 재작업을 줄일 수 있습니다.",
+        "생성된 코드의 실행 방법이 명확해야 결과를 확인할 수 있습니다.",
+        "개발 환경 설정이 간단해야 빠르게 시작할 수 있습니다.",
+        "환경 변수와 설정 파일을 분리해야 유지보수가 쉽습니다.",
       ],
       2,
     ),
     rebuttalTarget: pickRebuttalTarget(args.messages, "infra"),
-    rebuttal: "백엔드와 프론트엔드 초안이 있어도 배포·실행 가이드가 없으면 결과물이 반쪽짜리가 됩니다.",
+    rebuttal: "코드가 완벽해도 실행 환경이 없으면 결과물이 반쪽짜리입니다.",
     deploymentTopology: ensureMin(
       [
-        "Node 서버와 정적 프론트를 같은 앱 컨테이너에서 실행합니다.",
-        "로컬 Docker Compose 로 개발 환경을 재현합니다.",
-        "환경 변수 파일로 포트와 모델 연결 정보를 분리합니다.",
+        "로컬에서 바로 실행 가능한 개발 서버 구성",
+        "필요한 외부 서비스 연결 설정",
+        "환경 변수 파일로 설정 분리",
       ],
       3,
     ),
@@ -240,14 +244,13 @@ export function buildDeterministicInfraDiscussion(args: {
       [
         "local 개발 환경",
         "staging 검증 환경",
-        "production 운영 환경",
       ],
       2,
     ),
     observability: ensureMin(
       [
-        "헬스 체크 엔드포인트를 유지합니다.",
-        "오류 로그와 단계 상태를 함께 확인할 수 있어야 합니다.",
+        "앱 실행 상태를 확인할 수 있는 로그를 남깁니다.",
+        "에러 발생 시 원인을 파악할 수 있는 정보를 포함합니다.",
       ],
       2,
     ),
@@ -259,39 +262,40 @@ export function buildDeterministicTestDiscussion(args: {
   userRequest: string;
   messages: ChatMessage[];
 }): TestDiscussion {
+  const req = shrink(args.userRequest);
   return {
     headline: "테스트 관점 제안",
-    summary: "생성된 코드가 실제로 실행되고 역할 간 계약이 맞는지 빠르게 확인할 수 있는 검증 흐름을 먼저 고정해야 합니다.",
-    claim: "smoke test, contract test, regression check를 기본 세트로 둬야 멀티 에이전트 결과물을 신뢰할 수 있습니다.",
+    summary: `"${req}" 의 핵심 기능이 정상 동작하는지 확인할 수 있는 검증 전략을 정리합니다.`,
+    claim: "핵심 기능에 대한 기본 테스트가 있어야 코드 품질을 보장할 수 있습니다.",
     support: ensureMin(
       [
-        "코드가 생성되더라도 실행 확인이 없으면 품질 회귀를 놓치기 쉽습니다.",
-        "API, UI, AI, 인프라 제안은 서로 맞물리기 때문에 통합 검증 포인트가 필요합니다.",
-        "테스트 기준이 있어야 리뷰 메시지도 단순 의견이 아니라 품질 게이트가 됩니다.",
+        "핵심 API 엔드포인트가 정상 응답하는지 확인해야 합니다.",
+        "사용자 시나리오의 주요 경로가 동작하는지 검증해야 합니다.",
+        "외부 API 연동 부분의 에러 처리가 정상인지 확인해야 합니다.",
       ],
       2,
     ),
     rebuttalTarget: pickRebuttalTarget(args.messages, "test"),
-    rebuttal: "설계와 구현이 맞더라도 검증 전략이 비어 있으면 이후 다른 앱 요청에서 같은 불안정성이 반복됩니다.",
+    rebuttal: "구현이 완벽해도 검증이 없으면 변경 시 회귀 버그를 놓치기 쉽습니다.",
     testApproach: ensureMin(
       [
-        "핵심 엔드포인트에 대한 smoke test를 만든다.",
-        "공유 contract와 실제 bootstrap payload의 일치를 확인하는 contract test를 만든다.",
-        "빌드 후 앱이 실제로 뜨는지 확인하는 기본 실행 검증을 포함한다.",
+        "핵심 API에 대한 기본 동작 테스트를 만든다.",
+        "주요 사용자 시나리오를 검증하는 통합 테스트를 만든다.",
+        "앱이 실행되는지 확인하는 smoke test를 포함한다.",
       ],
       3,
     ),
     coverageFocus: ensureMin(
       [
-        "첫 실행 경로가 실제로 동작하는지 검증한다.",
-        "역할별 생성 파일이 서로 충돌하지 않고 연결되는지 확인한다.",
+        "핵심 기능의 정상 경로를 우선 검증한다.",
+        "에러 처리 경로가 올바르게 동작하는지 확인한다.",
       ],
       2,
     ),
     qualityRisks: ensureMin(
       [
-        "테스트 스크립트 없이 코드만 생성되면 회귀가 누적될 수 있습니다.",
-        "API 스키마와 프론트 렌더링 포인트가 어긋나면 앱이 빈 화면처럼 보일 수 있습니다.",
+        "테스트 없이 코드만 생성되면 회귀가 누적될 수 있습니다.",
+        "외부 API 의존 부분은 모킹 없이 테스트하면 불안정합니다.",
       ],
       2,
     ),
@@ -308,9 +312,9 @@ export function buildDeterministicReaction(args: {
     headline: `${roleLabel(args.role)} 반응 메모`,
     reactionType: "refine",
     targetMessageId: args.targetMessage.id,
-    position: `${roleLabel(args.role)} 관점에서는 현재 제안을 그대로 두되 연결 경계를 더 분명히 해야 합니다.`,
-    reaction: "지금 제안은 방향이 맞지만, 다음 단계에서 어떤 입력과 파일이 연결되는지 더 명확히 써야 합니다.",
-    adjustment: "참조 메시지와 대상 파일 또는 대상 API를 함께 적어 후속 구현자가 바로 이어받을 수 있게 합니다.",
+    position: `${roleLabel(args.role)} 관점에서는 현재 제안의 방향은 맞지만 구체적인 연결 부분을 보완해야 합니다.`,
+    reaction: "현재 제안의 방향은 좋지만, 실제 구현에서 어떤 입력과 출력이 연결되는지 더 명확히 해야 합니다.",
+    adjustment: "구체적인 데이터 흐름과 인터페이스를 명시하여 후속 구현에서 바로 사용할 수 있게 합니다.",
     references: takeReferences(args.messages, 3),
   };
 }

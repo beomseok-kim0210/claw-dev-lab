@@ -1,5 +1,5 @@
 import { resolveGenerationProfile } from "../llm/modelProfiles.js";
-import { OllamaClient } from "../llm/ollamaClient.js";
+import type { LLMClient } from "../llm/llmClient.js";
 import { buildInfraDiscussionPrompt, buildInfraSpecPrompt } from "../prompts/infra.js";
 import { buildConversationMessages } from "../prompts/shared.js";
 import type { ChatMessage } from "../types/chat.js";
@@ -14,7 +14,7 @@ import { buildDeterministicInfraDiscussion } from "./discussionFallbacks.js";
 import { buildDeterministicInfraSpec } from "./specFallbacks.js";
 
 export async function runInfraDiscussion(args: {
-  client: OllamaClient;
+  client: LLMClient;
   userRequest: string;
   messages: ChatMessage[];
 }): Promise<InfraDiscussion> {
@@ -34,7 +34,7 @@ export async function runInfraDiscussion(args: {
 }
 
 export async function generateInfraSpec(args: {
-  client: OllamaClient;
+  client: LLMClient;
   userRequest: string;
   finalDecision: PMFinalDecision;
   infraDiscussion: InfraDiscussion;

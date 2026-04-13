@@ -1,5 +1,5 @@
 import { resolveGenerationProfile } from "../llm/modelProfiles.js";
-import { OllamaClient } from "../llm/ollamaClient.js";
+import type { LLMClient } from "../llm/llmClient.js";
 import { buildFrontendDiscussionPrompt, buildFrontendSpecPrompt } from "../prompts/frontend.js";
 import { buildConversationMessages } from "../prompts/shared.js";
 import type { ChatMessage } from "../types/chat.js";
@@ -14,7 +14,7 @@ import { buildDeterministicFrontendDiscussion } from "./discussionFallbacks.js";
 import { buildDeterministicFrontendSpec } from "./specFallbacks.js";
 
 export async function runFrontendDiscussion(args: {
-  client: OllamaClient;
+  client: LLMClient;
   userRequest: string;
   messages: ChatMessage[];
 }): Promise<FrontendDiscussion> {
@@ -34,7 +34,7 @@ export async function runFrontendDiscussion(args: {
 }
 
 export async function generateFrontendSpec(args: {
-  client: OllamaClient;
+  client: LLMClient;
   userRequest: string;
   finalDecision: PMFinalDecision;
   frontendDiscussion: FrontendDiscussion;

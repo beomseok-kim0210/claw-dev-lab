@@ -7,7 +7,7 @@ const state = {
   eventSource: null,
   activeArtifact: null,
   projectMemory: null,
-  projectStartMode: "continue",
+  projectStartMode: "new",
   projectStartModeManual: false,
 };
 
@@ -51,7 +51,6 @@ exampleButton.addEventListener("click", () => {
 newProjectButton.addEventListener("click", () => {
   state.projectStartMode = "new";
   state.projectStartModeManual = true;
-  targetDirectoryInput.value = buildNewProjectDirectory();
   updateSubmitLabel();
   void inspectProjectMemory();
 });
@@ -879,57 +878,6 @@ function updateSubmitLabel() {
 
 function currentSubmitLabel() {
   return state.projectStartMode === "continue" ? "이어서 개발 시작" : "새 프로젝트 시작";
-}
-
-function buildNewProjectDirectory() {
-  const currentTarget = targetDirectoryInput.value.trim();
-  const baseTarget = currentTarget || state.projectMemory?.targetDirectory || "C:\\Users\\SSAFY\\Desktop\\multi-agent-workspace";
-  const requestSlug = slugifyRequest(requestInput.value.trim());
-  const timestamp = compactTimestamp(new Date());
-
-  let parentPath = "C:\\Users\\SSAFY\\Desktop";
-  let baseName = "multi-agent-workspace";
-
-  if (baseTarget.includes("\\") || baseTarget.includes("/")) {
-    const normalized = baseTarget.replaceAll("/", "\\");
-    const parts = normalized.split("\\").filter(Boolean);
-    if (parts.length > 0) {
-      baseName = parts.at(-1) || baseName;
-      if (parts.length > 1) {
-        parentPath = normalized.slice(0, normalized.length - baseName.length - 1);
-      }
-    }
-  }
-
-  const nextBaseName = requestSlug ? `${baseName}-${requestSlug}` : `${baseName}-new`;
-  return `${parentPath}\\${nextBaseName}-${timestamp}`;
-}
-
-function slugifyRequest(value) {
-  if (!value) {
-    return "";
-  }
-
-  const englishOnly = value
-    .toLowerCase()
-    .replace(/[^a-z0-9\s-]/g, " ")
-    .trim()
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 4)
-    .join("-");
-
-  return englishOnly.slice(0, 32);
-}
-
-function compactTimestamp(date) {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  const hours = String(date.getHours()).padStart(2, "0");
-  const minutes = String(date.getMinutes()).padStart(2, "0");
-  const seconds = String(date.getSeconds()).padStart(2, "0");
-  return `${year}${month}${day}-${hours}${minutes}${seconds}`;
 }
 
 function defaultPhases() {

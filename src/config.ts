@@ -12,6 +12,9 @@ const envSchema = z.object({
   // 코드 생성 전용 모델 — 코드 특화 모델을 쓰면 실제 전문성이 분리됨
   // 설정 안 하면 OLLAMA_MODEL과 동일하게 동작
   OLLAMA_CODEGEN_MODEL: z.string().min(1).optional(),
+  // Gemini API — 설정하면 1차로 Gemini 사용, 쿼터 소진 시 Ollama 폴백
+  GEMINI_API_KEY: z.string().optional(),
+  GEMINI_MODEL: z.string().default("gemini-2.5-flash"),
   AGENT_OUTPUT_DIR: z.string().optional(),
   MULTI_AGENT_PORT: z.coerce.number().int().min(1).max(65535).default(3030),
 });
@@ -26,6 +29,9 @@ export type AppConfig = {
   ollamaModel: string;
   // 코드 생성 전용 모델. 설정 안 하면 ollamaModel과 동일
   ollamaCodegenModel: string;
+  // Gemini API 설정 (optional — 있으면 Gemini 우선, 쿼터 소진 시 Ollama 폴백)
+  geminiApiKey?: string;
+  geminiModel: string;
   timeoutMs: number;
 };
 
@@ -50,12 +56,15 @@ export function loadAppConfig(
   const outputDir = path.resolve(overrides?.outputDir ?? parsed.data.AGENT_OUTPUT_DIR ?? cwd);
 
   const ollamaModel = overrides?.ollamaModel ?? parsed.data.OLLAMA_MODEL;
+  const rawGeminiKey = parsed.data.GEMINI_API_KEY?.trim();
   return {
     cwd,
     outputDir,
     ollamaBaseUrl: normalizeBaseUrl(overrides?.ollamaBaseUrl ?? parsed.data.OLLAMA_BASE_URL),
     ollamaModel,
     ollamaCodegenModel: parsed.data.OLLAMA_CODEGEN_MODEL ?? ollamaModel,
+    ...(rawGeminiKey ? { geminiApiKey: rawGeminiKey } : {}),
+    geminiModel: parsed.data.GEMINI_MODEL,
     timeoutMs: 120_000,
   };
 }

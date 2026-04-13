@@ -1,12 +1,12 @@
 import { resolveGenerationProfile } from "../llm/modelProfiles.js";
-import { OllamaClient } from "../llm/ollamaClient.js";
+import type { LLMClient } from "../llm/llmClient.js";
 import { buildReactionPrompt } from "../prompts/reaction.js";
 import { buildConversationMessages } from "../prompts/shared.js";
 import type { ChatMessage } from "../types/chat.js";
 import { agentReactionSchema, type AgentReaction } from "../types/contracts.js";
 
 export async function runAgentReaction(args: {
-  client?: OllamaClient;
+  client?: LLMClient;
   role: "backend" | "frontend" | "ai" | "infra" | "test";
   userRequest: string;
   messages: ChatMessage[];

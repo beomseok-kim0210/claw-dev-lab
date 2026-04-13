@@ -1,5 +1,5 @@
 import { resolveGenerationProfile } from "../llm/modelProfiles.js";
-import { OllamaClient } from "../llm/ollamaClient.js";
+import type { LLMClient } from "../llm/llmClient.js";
 import { buildBuildBriefPrompt } from "../prompts/buildBrief.js";
 import type {
   AIFeaturesSpec,
@@ -13,7 +13,7 @@ import type {
 import { buildBriefSchema, type BuildBrief } from "../types/generation.js";
 
 export async function generateBuildBrief(args: {
-  client: OllamaClient;
+  client: LLMClient;
   userRequest: string;
   finalDecision: PMFinalDecision;
   backendSpec: BackendSpec;
@@ -69,6 +69,7 @@ function buildFallbackBuildBrief(args: {
     screens: takeUnique([...args.frontendSpec.screens, "Dashboard", "Detail View"]).slice(0, 8),
     entities: takeUnique([...args.backendSpec.dataModel, "AppState", "UserAction"]).slice(0, 8),
     apiEndpoints: args.backendSpec.apiDesign.slice(0, 10),
+    sharedContracts: buildFallbackSharedContracts(args.backendSpec, args.aiFeaturesSpec),
     stack: detectStack(appType),
     fileLayout: detectFileLayout(appType),
     acceptanceChecks: takeUnique([
@@ -82,6 +83,48 @@ function buildFallbackBuildBrief(args: {
       ...args.testSpec.testStrategy,
     ]).slice(0, 6),
   };
+}
+
+function buildFallbackSharedContracts(
+  backendSpec: BackendSpec,
+  aiFeaturesSpec: AIFeaturesSpec,
+): BuildBrief["sharedContracts"] {
+  const contracts: BuildBrief["sharedContracts"] = [];
+
+  // Derive API endpoint contracts from backend spec
+  for (const endpoint of backendSpec.apiDesign.slice(0, 4)) {
+    contracts.push({
+      kind: "api-endpoint",
+      signature: endpoint,
+      owner: "backend",
+      consumers: ["frontend"],
+      payload: "JSON response body (see backend spec for details)",
+    });
+  }
+
+  // Derive shared function contracts from AI features
+  for (const feature of aiFeaturesSpec.features.slice(0, 2)) {
+    contracts.push({
+      kind: "shared-function",
+      signature: feature,
+      owner: "ai",
+      consumers: ["backend", "frontend"],
+      payload: "Domain-specific analysis result",
+    });
+  }
+
+  // Ensure minimum of 1 contract
+  if (contracts.length === 0) {
+    contracts.push({
+      kind: "api-endpoint",
+      signature: "GET /api/bootstrap",
+      owner: "backend",
+      consumers: ["frontend"],
+      payload: "{ status: string, data: unknown }",
+    });
+  }
+
+  return contracts.slice(0, 12);
 }
 
 function detectAppName(userRequest: string): string {

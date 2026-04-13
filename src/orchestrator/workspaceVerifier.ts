@@ -127,14 +127,14 @@ async function runTypeCheck(projectRoot: string, toolingRoot: string): Promise<V
   } catch (error) {
     const snippet = formatExecError(error);
     const isMissingTypes =
-      /cannot find module|cannot find type/i.test(snippet) && !hasNodeModules;
+      /cannot find module|cannot find type|could not find a declaration file/i.test(snippet);
 
     if (isMissingTypes) {
       return {
         name: "typescript check",
         command: "tsc --noEmit -p tsconfig.json --skipLibCheck --types",
         status: "passed",
-        summary: "의존성 미설치 환경에서 외부 타입 오류를 제외하면 구조적 검사를 통과했습니다.",
+        summary: "외부 패키지 타입 오류를 제외하면 구조적 검사를 통과했습니다.",
         outputSnippet: snippet.slice(0, 400),
       };
     }

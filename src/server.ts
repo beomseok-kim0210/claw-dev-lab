@@ -7,6 +7,8 @@ import { URL } from "node:url";
 import { z } from "zod";
 
 import { loadServerConfig, resolveDefaultTargetDirectory } from "./config.js";
+import { GeminiClient } from "./llm/geminiClient.js";
+import { FallbackLLMClient } from "./llm/llmClient.js";
 import { OllamaClient } from "./llm/ollamaClient.js";
 import { MultiAgentOrchestrator } from "./orchestrator/multiAgentOrchestrator.js";
 import { listWorkspaceFiles, loadProjectMemory } from "./orchestrator/projectMemory.js";
@@ -33,12 +35,25 @@ const submitClarificationSchema = z.object({
 const config = loadServerConfig();
 const sessionStore = new SessionStore();
 
-// 토론/추론/리뷰 전용 클라이언트 (qwen3.5 등 reasoning 모델)
-const client = new OllamaClient({
+// Ollama 로컬 클라이언트 (항상 생성 — 폴백용)
+const ollamaClient = new OllamaClient({
   baseUrl: config.ollamaBaseUrl,
   model: config.ollamaModel,
   timeoutMs: config.timeoutMs,
 });
+
+// Gemini API가 설정되어 있으면 Gemini 우선, 쿼터 소진 시 Ollama 폴백
+const client = config.geminiApiKey
+  ? new FallbackLLMClient(
+      new GeminiClient({
+        apiKey: config.geminiApiKey,
+        model: config.geminiModel,
+        timeoutMs: config.timeoutMs,
+      }),
+      ollamaClient,
+      (reason) => process.stdout.write(`[LLM fallback] ${reason}\n`),
+    )
+  : ollamaClient;
 
 // 코드 생성 전용 클라이언트
 // OLLAMA_CODEGEN_MODEL 미설정 시 → reasoning 모델과 동일 (기존 동작 유지)
@@ -81,7 +96,7 @@ const server = createServer(async (req, res) => {
 
     if (method === "POST" && requestUrl.pathname === "/api/sessions") {
       const payload = createSessionSchema.parse(await readJson(req));
-      const startMode = payload.startMode ?? "continue";
+      const startMode = payload.startMode ?? "new";
       const requestedTargetDirectory = normalizeTargetDirectory(payload.targetDirectory);
       const targetDirectory = await resolveSessionTargetDirectory(requestedTargetDirectory, startMode);
       const session = sessionStore.createSession(payload.request, targetDirectory, startMode);
@@ -389,54 +404,11 @@ async function inspectProjectTarget(targetDirectory: string | undefined): Promis
 
 async function resolveSessionTargetDirectory(
   targetDirectory: string | undefined,
-  startMode: ProjectStartMode,
+  _startMode: ProjectStartMode,
 ): Promise<string | undefined> {
-  const resolvedTarget = targetDirectory ?? resolveDefaultTargetDirectory();
-  if (startMode !== "new") {
-    return resolvedTarget;
-  }
-
-  const preview = await inspectProjectTarget(resolvedTarget);
-  if (!preview.exists && !preview.hasProjectMemory && preview.workspaceFileCount === 0) {
-    return resolvedTarget;
-  }
-  if (preview.exists && !preview.hasProjectMemory && preview.workspaceFileCount === 0) {
-    return resolvedTarget;
-  }
-
-  const freshTarget = await allocateFreshProjectDirectory(resolvedTarget);
-  await mkdir(freshTarget, { recursive: true });
-  return freshTarget;
+  return targetDirectory ?? resolveDefaultTargetDirectory();
 }
 
-async function allocateFreshProjectDirectory(baseTarget: string): Promise<string> {
-  const parsed = path.parse(baseTarget);
-  const stem = parsed.ext ? parsed.name : parsed.base;
-  const extension = parsed.ext ?? "";
-  const parent = parsed.dir || path.dirname(baseTarget);
-  const stamp = buildDirectoryTimestamp(new Date());
-
-  for (let attempt = 0; attempt < 100; attempt += 1) {
-    const suffix = attempt === 0 ? stamp : `${stamp}-${attempt + 1}`;
-    const candidateName = `${stem}-${suffix}${extension}`;
-    const candidatePath = path.join(parent, candidateName);
-    if (!(await isDirectory(candidatePath))) {
-      return candidatePath;
-    }
-  }
-
-  return path.join(parent, `${stem}-${Date.now()}${extension}`);
-}
-
-function buildDirectoryTimestamp(date: Date): string {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  const hours = String(date.getHours()).padStart(2, "0");
-  const minutes = String(date.getMinutes()).padStart(2, "0");
-  const seconds = String(date.getSeconds()).padStart(2, "0");
-  return `${year}${month}${day}-${hours}${minutes}${seconds}`;
-}
 
 async function isDirectory(targetPath: string): Promise<boolean> {
   try {

@@ -7,7 +7,7 @@ import {
   planClarification,
 } from "../agents/clarificationAgent.js";
 import { generateBuildBrief } from "../agents/buildBriefAgent.js";
-import { isAllowedRolePath } from "../agents/codegenPaths.js";
+import { filterCrossRoleFiles, isAllowedRolePath } from "../agents/codegenPaths.js";
 import { generateCodeBundle, reviseCodeBundle } from "../agents/codegenAgent.js";
 import {
   buildVerificationRepairReview,
@@ -27,7 +27,7 @@ import {
 } from "../agents/pmAgent.js";
 import { formatAgentReaction, runAgentReaction } from "../agents/reactionAgent.js";
 import { formatTestDiscussion, generateTestSpec, runTestDiscussion } from "../agents/testAgent.js";
-import { OllamaClient } from "../llm/ollamaClient.js";
+import type { LLMClient } from "../llm/llmClient.js";
 import type { AgentRole, ChatMessage } from "../types/chat.js";
 import type {
   AIDiscussion,
@@ -65,10 +65,10 @@ import {
 import { formatVerificationReport, runWorkspaceVerification } from "./workspaceVerifier.js";
 
 type MultiAgentOrchestratorArgs = {
-  /** 토론·추론·리뷰 담당 모델 (qwen3.5 등 reasoning 특화) */
-  client: OllamaClient;
+  /** 토론·추론·리뷰 담당 모델 (Gemini, qwen3.5 등) */
+  client: LLMClient;
   /** 코드 생성·수정 전용 모델 (qwen2.5-coder 등 코드 특화). 미설정 시 client와 동일 */
-  codegenClient?: OllamaClient;
+  codegenClient?: LLMClient;
   outputDir: string;
   codeOutputDir?: string;
   codePathPrefix?: string;
@@ -89,8 +89,8 @@ type GeneratedSpecBundle = {
 };
 
 export class MultiAgentOrchestrator {
-  private readonly client: OllamaClient;
-  private readonly codegenClient: OllamaClient;
+  private readonly client: LLMClient;
+  private readonly codegenClient: LLMClient;
   private readonly outputDir: string;
   private readonly codeOutputDir: string;
   private readonly codePathPrefix: string;
@@ -690,16 +690,27 @@ export class MultiAgentOrchestrator {
       return loadWorkspaceContextFiles(this.projectRootDir, role, maxFiles);
     }
 
-    const roleFiles = uniqueCodePaths(trackedWorkspaceFiles)
+    const allPaths = uniqueCodePaths(trackedWorkspaceFiles);
+
+    // Own role's files (primary context)
+    const roleFiles = allPaths
       .filter((filePath) => isAllowedRolePath(role, filePath))
       .slice(0, maxFiles);
 
+    // Cross-role dependency files (read-only context to prevent interface deadlocks)
+    const crossRoleMaxFiles = Math.max(2, maxFiles - roleFiles.length);
+    const crossRoleFiles = filterCrossRoleFiles(role, allPaths, crossRoleMaxFiles)
+      .filter((filePath) => !roleFiles.includes(filePath));
+
+    const combined = [...roleFiles, ...crossRoleFiles];
+
     const contexts: Array<{ path: string; content: string }> = [];
-    for (const filePath of roleFiles) {
+    for (const filePath of combined) {
       try {
         const content = await readFile(path.resolve(this.projectRootDir, filePath), "utf8");
+        const isCrossRole = crossRoleFiles.includes(filePath);
         contexts.push({
-          path: filePath,
+          path: isCrossRole ? `[cross-role] ${filePath}` : filePath,
           content: content.split(/\r?\n/u).slice(0, 160).join("\n").slice(0, 8_000),
         });
       } catch {

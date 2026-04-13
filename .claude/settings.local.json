@@ -7,7 +7,32 @@
       "Bash(ls -la /c/Users/SSAFY/Desktop/claw-dev/src/agents/*.ts)",
       "Bash(ls -la /c/Users/SSAFY/Desktop/claw-dev/src/prompts/*.ts)",
       "Bash(ls -la /c/Users/SSAFY/Desktop/claw-dev/src/types/*.ts)",
-      "Bash(find /c/Users/SSAFY/Desktop/claw-dev/src -name \"*.ts\" -exec grep -l \"^export\" {} \\\\;)"
+      "Bash(find /c/Users/SSAFY/Desktop/claw-dev/src -name \"*.ts\" -exec grep -l \"^export\" {} \\\\;)",
+      "Bash(tasklist)",
+      "Bash(wmic process:*)",
+      "Bash(netstat -ano)",
+      "Bash(taskkill //PID 9148 //F)",
+      "Bash(curl -s http://127.0.0.1:11434/api/tags)",
+      "Bash(curl -s --connect-timeout 5 http://localhost:11434/api/tags)",
+      "Bash(where ollama:*)",
+      "Bash(ollama list:*)",
+      "Bash(ollama serve:*)",
+      "Bash(curl -s http://127.0.0.1:3030/api/health)",
+      "Bash(curl -s --connect-timeout 3 http://localhost:11434/api/tags)",
+      "Bash(find /c/Users/SSAFY/Desktop/claw-dev/src -name \"*.ts\" -type f -exec grep -l \"formatRoleProjectMemoryMessage\" {} \\\\;)",
+      "Bash(taskkill //PID 3644 //F)",
+      "Bash(taskkill //PID 2564 //F)",
+      "Bash(nvidia-smi --query-gpu=name,memory.total,memory.free --format=csv,noheader)",
+      "Bash(taskkill //PID 6804 //F)",
+      "Bash(curl -s --connect-timeout 3 http://127.0.0.1:3030/api/health)",
+      "Bash(taskkill //PID 13076 //F)",
+      "Bash(taskkill //PID 23184 //F)",
+      "Bash(taskkill //PID 13984 //F)",
+      "Bash(npx tsx:*)",
+      "Bash(curl -s http://127.0.0.1:3030/)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://127.0.0.1:3030/)",
+      "Bash(npx claude-code-templates@latest --skill creative-design/frontend-design)",
+      "Read(//c/Users/SSAFY/AppData/Local/Temp/claude/C--Users-SSAFY-Desktop-claw-dev/b65ea144-972f-48f3-910a-73762c295439/tasks/**)"
     ]
   }
 }
